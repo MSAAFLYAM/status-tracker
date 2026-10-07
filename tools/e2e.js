@@ -78,16 +78,24 @@ async function click(page, sel, idx = 0) {
   assert(r, `click ${sel}[${idx}]`);
 }
 async function clickText(page, sel, text) {
-  const r = await page.evaluate(
-    (sel, text) => {
-      const el = [...document.querySelectorAll(sel)].find((e) => (e.textContent || "").includes(text));
-      if (!el) return false;
-      el.click();
-      return true;
-    },
-    sel,
-    text
-  );
+  // The handler may render the target asynchronously (file reads, IDB writes),
+  // so poll briefly instead of failing on the first miss.
+  let r = false;
+  const t0 = Date.now();
+  while (Date.now() - t0 < 8000) {
+    r = await page.evaluate(
+      (sel, text) => {
+        const el = [...document.querySelectorAll(sel)].find((e) => (e.textContent || "").includes(text));
+        if (!el) return false;
+        el.click();
+        return true;
+      },
+      sel,
+      text
+    );
+    if (r) break;
+    await sleep(120);
+  }
   assert(r, `click ${sel} containing "${text}"`);
 }
 async function setVal(page, sel, value) {

@@ -3,7 +3,11 @@
  * Correct MIME types (manifest as application/manifest+json, modules as
  * text/javascript), so the service worker behaves like it will in production.
  *
- * Run: node tools/serve.js [port]
+ * Usage:
+ *   node tools/serve.js [port] [--root <dir>]
+ *
+ * --root lets you serve any directory (used by the subpath test to simulate
+ * GitHub Pages serving the repo under /status-tracker/).
  */
 "use strict";
 
@@ -11,8 +15,13 @@ const http = require("http");
 const fs = require("fs");
 const path = require("path");
 
-const ROOT = path.join(__dirname, "..");
-const PORT = Number(process.argv[2] || process.env.PORT || 8080);
+const args = process.argv.slice(2);
+let PORT = 8080;
+let ROOT = path.join(__dirname, "..");
+for (let i = 0; i < args.length; i++) {
+  if (args[i] === "--root") ROOT = path.resolve(args[++i] || ROOT);
+  else if (!String(args[i]).startsWith("-")) PORT = Number(args[i]) || PORT;
+}
 
 const MIME = {
   ".html": "text/html; charset=utf-8",
@@ -40,19 +49,26 @@ http
       res.writeHead(400).end("bad request");
       return;
     }
-    if (p.endsWith("/")) p += "index.html";
     const file = path.normalize(path.join(ROOT, p));
     if (!file.startsWith(ROOT)) {
       res.writeHead(403).end("forbidden");
       return;
     }
-    fs.readFile(file, (err, data) => {
+    // Redirect "/dir" -> "/dir/" exactly like GitHub Pages / python http.server,
+    // so relative URLs (and the service worker scope) resolve correctly.
+    if (!p.endsWith("/") && fs.existsSync(file) && fs.statSync(file).isDirectory()) {
+      res.writeHead(301, { Location: p + "/" }).end();
+      return;
+    }
+    if (p.endsWith("/")) p += "index.html";
+    const target = path.normalize(path.join(ROOT, p));
+    fs.readFile(target, (err, data) => {
       if (err) {
         res.writeHead(404, { "Content-Type": "text/plain; charset=utf-8" }).end("404 not found");
         return;
       }
       res.writeHead(200, {
-        "Content-Type": MIME[path.extname(file).toLowerCase()] || "application/octet-stream",
+        "Content-Type": MIME[path.extname(target).toLowerCase()] || "application/octet-stream",
         "Cache-Control": "no-store",
       });
       res.end(data);
