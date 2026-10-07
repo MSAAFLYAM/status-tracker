@@ -1,0 +1,476 @@
+﻿/**
+ * e2e.js — headless-Chrome test run against a local server.
+ * Covers the acceptance tests from the spec:
+ *   1. works offline (airplane mode) after the first load
+ *   2. searching a last name returns everyone with that name
+ *   3. 30-day leave from today => status + return date; past leave => "يعمل"
+ *   4. التقاعد needs no date and no duration, and stays
+ *   5. export -> wipe -> restore brings everything back (photos included)
+ *   6. CSV with ";" and Arabic headers imports correctly
+ * Plus: forced PIN setup, dashboard, label/type renaming, manifest + precache.
+ *
+ * Run: node tools/e2e.js   (starts/stops its own server on port 8123)
+ */
+"use strict";
+
+const puppeteer = require("puppeteer-core");
+const fs = require("fs");
+const os = require("os");
+const path = require("path");
+const { spawn } = require("child_process");
+
+const ROOT = path.join(__dirname, "..");
+const PORT = 8123;
+const BASE = `http://localhost:${PORT}/`;
+const DL = path.join(os.tmpdir(), "emp-e2e-dl");
+const SAMPLE = path.join(ROOT, "sample-fake.csv");
+const PHOTO = path.join(ROOT, "icons", "icon-192.png");
+const PIN = "1234";
+
+const CHROME =
+  [
+    "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
+    "C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe",
+    "C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe",
+  ].find((p) => fs.existsSync(p)) || process.env.CHROME_PATH;
+
+/* ------------------------------------------------------------- helpers ---- */
+
+let passed = 0;
+function assert(cond, msg) {
+  if (!cond) throw new Error("FAILED: " + msg);
+  passed++;
+  console.log("  ok   " + msg);
+}
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const todayStr = () => new Date(Date.now() - new Date().getTimezoneOffset() * 6e4).toISOString().slice(0, 10);
+function addDays(iso, n) {
+  const d = new Date(iso + "T00:00:00Z");
+  d.setUTCDate(d.getUTCDate() + n);
+  return d.toISOString().slice(0, 10);
+}
+
+async function txt(page, sel = "#app") {
+  return page.$eval(sel, (e) => e.innerText);
+}
+async function hasTxt(page, s, sel = "#app") {
+  return (await txt(page, sel)).includes(s);
+}
+async function assertTxt(page, s, sel = "#app", msg) {
+  assert(await hasTxt(page, s, sel), msg || `screen contains "${s}"`);
+}
+async function closeAlert(page) {
+  await page.waitForFunction(() => !!document.querySelector(".modal"), { timeout: 6000 });
+  await page.evaluate(() => [...document.querySelectorAll(".modal button")].find((b) => b.textContent.includes("حسنًا"))?.click());
+  await page.waitForFunction(() => !document.querySelector(".modal"), { timeout: 6000 });
+}
+async function click(page, sel, idx = 0) {
+  const r = await page.evaluate(
+    (sel, idx) => {
+      const els = [...document.querySelectorAll(sel)];
+      if (!els[idx]) return false;
+      els[idx].click();
+      return true;
+    },
+    sel,
+    idx
+  );
+  assert(r, `click ${sel}[${idx}]`);
+}
+async function clickText(page, sel, text) {
+  const r = await page.evaluate(
+    (sel, text) => {
+      const el = [...document.querySelectorAll(sel)].find((e) => (e.textContent || "").includes(text));
+      if (!el) return false;
+      el.click();
+      return true;
+    },
+    sel,
+    text
+  );
+  assert(r, `click ${sel} containing "${text}"`);
+}
+async function setVal(page, sel, value) {
+  await page.$eval(
+    sel,
+    (el, v) => {
+      el.value = v;
+      el.dispatchEvent(new Event("input", { bubbles: true }));
+      el.dispatchEvent(new Event("change", { bubbles: true }));
+    },
+    value
+  );
+}
+
+async function unlock(page) {
+  await page.waitForFunction(
+    () => {
+      const l = document.getElementById("lock");
+      return (l && !l.hidden) || (document.getElementById("app") && document.getElementById("app").innerText.length > 0);
+    },
+    { timeout: 10000 }
+  );
+  const st = await page.evaluate(() => ({
+    vis: !document.getElementById("lock").hidden,
+    setup: !!document.getElementById("ack"),
+  }));
+  if (!st.vis) return;
+  await page.evaluate((setup) => {
+    if (setup) document.getElementById("ack").checked = true;
+    ["1", "2", "3", "4"].forEach((k) => document.querySelector(`#lock [data-k="${k}"]`).click());
+    document.querySelector('#lock [data-k="ok"]').click();
+  }, st.setup);
+  await page.waitForFunction(() => document.getElementById("lock").hidden === true, { timeout: 10000 });
+}
+async function open(page, url = BASE) {
+  await page.goto(url, { waitUntil: "load", timeout: 15000 });
+  await unlock(page);
+}
+async function search(page, q) {
+  await setVal(page, "#q", q);
+  await clickText(page, "#app [data-a='go']", "بحث");
+}
+async function openEmployee(page, q) {
+  await search(page, q);
+  await click(page, ".card[data-id]", 0);
+}
+async function waitForFile(pattern, timeout = 10000) {
+  const re = new RegExp(pattern);
+  const t0 = Date.now();
+  while (Date.now() - t0 < timeout) {
+    const hit = fs.readdirSync(DL).find((n) => re.test(n));
+    if (hit) return path.join(DL, hit);
+    await sleep(150);
+  }
+  throw new Error("FAILED: no file downloaded matching " + pattern);
+}
+
+function startServer() {
+  const s = spawn(process.execPath, [path.join(ROOT, "tools", "serve.js"), String(PORT)], {
+    cwd: ROOT,
+    stdio: "ignore",
+    detached: false,
+  });
+  return s;
+}
+async function waitServer(up) {
+  for (let i = 0; i < 60; i++) {
+    try {
+      const r = await fetch(BASE);
+      if (r.ok) return true;
+    } catch (e) {
+      if (!up) return false;
+    }
+    await sleep(150);
+  }
+  if (up) throw new Error("FAILED: server did not start");
+  return false;
+}
+
+/* ------------------------------------------------------------ test cases --- */
+
+async function staticChecks() {
+  console.log("\n[static] manifest, icons, precache list");
+  const res = await fetch(BASE + "manifest.webmanifest");
+  assert(res.ok, "manifest reachable");
+  assert(/manifest\+json|application\/json/.test(res.headers.get("content-type") || ""), "manifest MIME type is JSON-ish");
+  const m = await res.json();
+  assert(m.lang === "ar" && m.dir === "rtl", "manifest lang=ar dir=rtl");
+  assert(m.display === "standalone", "manifest display=standalone");
+  assert(m.background_color === "#000000" && m.theme_color === "#000000", "manifest black background/theme");
+  assert(m.icons.length === 3, "manifest has 3 icons (192, 512, maskable)");
+  const purposes = m.icons.map((i) => i.purpose).join(" ");
+  assert(purposes.includes("maskable") && purposes.includes("any"), "maskable + any icon purposes");
+  for (const ic of m.icons) {
+    const r = await fetch(new URL(ic.src, BASE));
+    assert(r.ok, `icon ${ic.src} reachable`);
+    const buf = Buffer.from(await r.arrayBuffer());
+    assert(buf.slice(0, 8).toString("hex") === "89504e470d0a1a0a", `${ic.src} is a PNG`);
+    assert(`${buf.readUInt32BE(16)}x${buf.readUInt32BE(20)}` === ic.sizes, `${ic.src} size matches manifest`);
+  }
+
+  const sw = fs.readFileSync(path.join(ROOT, "sw.js"), "utf8");
+  const block = sw.match(/const ASSETS = \[([\s\S]*?)\];/);
+  assert(!!block, "sw.js declares a precache list");
+  const assets = [...block[1].matchAll(/"([^"]+)"/g)].map((x) => x[1]);
+  assert(assets.length >= 20, `precache list has ${assets.length} entries`);
+  for (const a of assets) {
+    const r = await fetch(new URL(a, BASE));
+    assert(r.ok, `precache target ${a} returns ${r.status}`);
+  }
+  const indexHtml = await (await fetch(BASE + "index.html")).text();
+  assert(indexHtml.includes('lang="ar"') && indexHtml.includes('dir="rtl"'), "index.html is Arabic RTL");
+  assert(!/security|gouv|maroc|minist/i.test(indexHtml), "index.html has no institution name");
+}
+
+async function main() {
+  fs.rmSync(DL, { recursive: true, force: true });
+  fs.mkdirSync(DL, { recursive: true });
+
+  let server = startServer();
+  await waitServer(true);
+  await staticChecks();
+
+  console.log("\n[browser] launch");
+  const browser = await puppeteer.launch({
+    executablePath: CHROME,
+    headless: true,
+    defaultViewport: { width: 412, height: 900, isMobile: true, hasTouch: true },
+    args: ["--disable-dev-shm-usage", "--window-size=430,930"],
+  });
+  const page = await browser.newPage();
+  const pageErrors = [];
+  const consoleErrors = [];
+  page.on("pageerror", (e) => pageErrors.push(String(e)));
+  page.on("console", (m) => {
+    if (m.type() === "error") consoleErrors.push(m.text());
+  });
+
+  const cdp = await page.target().createCDPSession();
+  await cdp.send("Browser.setDownloadBehavior", { behavior: "allow", downloadPath: DL, eventsEnabled: true });
+
+  /* 0. first launch => forced PIN setup, with the no-recovery warning */
+  console.log("\n[PIN] forced setup on first launch");
+  await page.goto(BASE, { waitUntil: "load" });
+  await page.waitForFunction(() => !document.getElementById("lock").hidden, { timeout: 10000 });
+  assert(true, "lock screen shows on first launch");
+  assert(await hasTxt(page, "إنشاء رمز القفل", "#lock"), "screen is in setup mode");
+  assert(await hasTxt(page, "لا يوجد استرجاع", "#lock"), "clear no-recovery warning is shown");
+  await page.evaluate(() => document.querySelector('#lock [data-k="ok"]').click());
+  await assertTxt(page, "أكّد أنك تفهم", "#lock", "cannot skip the acknowledgement");
+  await unlock(page);
+  assert(await page.evaluate(() => document.getElementById("lock").hidden), "PIN saved, app unlocked");
+  await assertTxt(page, "لا يوجد أي موظف بعد", "#app", "empty state on first run");
+
+  /* service worker */
+  console.log("\n[offline] service worker install");
+  await page.evaluate(() => navigator.serviceWorker.ready);
+  await page.waitForFunction(() => !!navigator.serviceWorker.controller, { timeout: 10000 });
+  assert(true, "service worker is active and controls the page");
+
+  /* 6. CSV with ";" and Arabic headers */
+  console.log("\n[CSV] import sample-fake.csv (semicolon, Arabic headers)");
+  await clickText(page, "#nav button", "استيراد CSV");
+  await (await page.$("#csv")).uploadFile(SAMPLE);
+  await page.waitForFunction(() => /تمت معالجة/.test(document.querySelector("#msg").innerText), { timeout: 8000 });
+  await assertTxt(page, "جديد: 10، محدّث: 0", "#msg", "10 rows created");
+  await clickText(page, "#nav button", "بحث");
+  await assertTxt(page, "10 / 10 موظف", "#app", "10 employees in the list");
+
+  /* re-import => updates on same matricule, no duplicates */
+  await clickText(page, "#nav button", "استيراد CSV");
+  await (await page.$("#csv")).uploadFile(SAMPLE);
+  await page.waitForFunction(() => /جديد: 0، محدّث: 10/.test(document.querySelector("#msg").innerText), { timeout: 8000 });
+  assert(true, "second import updates existing matricules");
+  await clickText(page, "#nav button", "بحث");
+  await assertTxt(page, "10 / 10 موظف", "#app", "still 10 employees (no duplicates)");
+
+  /* extra fake rows for search tests (written outside the repo) */
+  const searchCsv = path.join(DL, "search-fake.csv");
+  fs.writeFileSync(
+    searchCsv,
+    "\uFEFFالرقم المهني;الاسم العائلي;الاسم الشخصي;الرتبة\n" +
+      "FAKE-1001;العلوي;محمد;متدرّب تجريبي\n" +
+      "FAKE-1002;العلوي;سعاد;متدرّبة تجريبية\n" +
+      "FAKE-1003;أسد;علي;متدرّب تجريبي\n",
+    "utf8"
+  );
+  await clickText(page, "#nav button", "استيراد CSV");
+  await (await page.$("#csv")).uploadFile(searchCsv);
+  await page.waitForFunction(() => /جديد: 3/.test(document.querySelector("#msg").innerText), { timeout: 8000 });
+  assert(true, "extra fake rows imported");
+
+  /* 2. search: last name, word order, hamza normalization, matricule */
+  console.log("\n[search] acceptance test 2");
+  await clickText(page, "#nav button", "بحث");
+  await search(page, "العلوي");
+  await assertTxt(page, "2 / 13 موظف", "#app", "search العلوي returns everyone with that last name");
+  await search(page, "العلوي محمد");
+  await assertTxt(page, "1 / 13 موظف", "#app", "search by full name in any word order");
+  await search(page, "محمد العلوي");
+  await assertTxt(page, "1 / 13 موظف", "#app", "…and the other word order too");
+  await search(page, "اسد");
+  await assertTxt(page, "1 / 13 موظف", "#app", "hamza normalization (أسد found as اسد)");
+  await search(page, "FAKE-1001");
+  await assertTxt(page, "1 / 13 موظف", "#app", "search by professional number");
+
+  /* dashboard before any absence */
+  console.log("\n[dashboard]");
+  await clickText(page, "#nav button", "لوحة");
+  await assertTxt(page, "13", "#app", "dashboard shows total headcount");
+  await assertTxt(page, "لا يوجد أي غائب اليوم", "#app", "nobody absent yet");
+
+  /* 3. 30-day leave from today => status + return date */
+  console.log("\n[status] acceptance test 3");
+  await clickText(page, "#nav button", "بحث");
+  await openEmployee(page, "FAKE-0001");
+  await setVal(page, "#ps", todayStr());
+  await setVal(page, "#pd", "30");
+  await clickText(page, "#app [data-a='addp']", "إضافة");
+  await assertTxt(page, "عطلة إدارية داخل التراب الوطني", "#app", "status shows the leave type");
+  await assertTxt(page, "يعود إلى العمل: " + addDays(todayStr(), 30), "#app", "return date = start + 30 days");
+
+  /* past leave => still "يعمل" */
+  await clickText(page, "#nav button", "بحث");
+  await openEmployee(page, "FAKE-0002");
+  await setVal(page, "#ps", addDays(todayStr(), -10));
+  await setVal(page, "#pd", "5");
+  await clickText(page, "#app [data-a='addp']", "إضافة");
+  await assertTxt(page, "يعمل", "#app", "a finished past leave shows يعمل");
+
+  /* 4. التقاعد: no date, no duration, stays */
+  console.log("\n[status] acceptance test 4 — التقاعد");
+  await clickText(page, "#nav button", "بحث");
+  await openEmployee(page, "FAKE-0003");
+  await page.select("#pt", "t11");
+  await sleep(120);
+  assert(await page.$eval("#pr", (e) => e.hidden), "choosing التقاعد hides date + duration inputs");
+  await clickText(page, "#app [data-a='addp']", "إضافة");
+  await assertTxt(page, "التقاعد", "#app", "status shows التقاعد");
+  assert(!(await hasTxt(page, "يعود إلى العمل", "#app")), "no return date for التقاعد");
+  await page.reload({ waitUntil: "load" });
+  await unlock(page);
+  await openEmployee(page, "FAKE-0003");
+  await assertTxt(page, "التقاعد", "#app", "التقاعد survives a reload (never stored, still computed)");
+
+  /* short leave to exercise "returns due in 7 days" */
+  await clickText(page, "#nav button", "بحث");
+  await openEmployee(page, "FAKE-0004");
+  await setVal(page, "#ps", todayStr());
+  await setVal(page, "#pd", "3");
+  await clickText(page, "#app [data-a='addp']", "إضافة");
+  await clickText(page, "#nav button", "لوحة");
+  await assertTxt(page, "يعودون خلال 7 أيام", "#app", "dashboard: returns due within 7 days section");
+  await assertTxt(page, addDays(todayStr(), 3), "#app", "…employee returning in 3 days is listed with the date");
+  await assertTxt(page, "الغيابون حسب النوع", "#app", "dashboard: away grouped by type");
+
+  /* period editing */
+  console.log("\n[periods] edit a period");
+  await clickText(page, "#nav button", "بحث");
+  await openEmployee(page, "FAKE-0001");
+  await click(page, "[data-a='editp']", 0);
+  await setVal(page, "#pd", "45");
+  await clickText(page, "#app [data-a='addp']", "حفظ التعديل");
+  await assertTxt(page, "يعود إلى العمل: " + addDays(todayStr(), 45), "#app", "edited duration updates the return date");
+  await click(page, "[data-a='rmp']", 0);
+  await assertTxt(page, "يعمل", "#app", "deleting the period restores يعمل");
+
+  /* settings: rename leave type + field label (stored on device only) */
+  console.log("\n[settings] editable types and labels");
+  await clickText(page, "#nav button", "إعدادات");
+  await setVal(page, "#nm_t01", "عطلة إدارية (معدلة)");
+  await clickText(page, "#app [data-a='savetypes']", "حفظ الأنواع");
+  await closeAlert(page);
+  await setVal(page, "#lab_joined", "تاريخ الالتحاق (مخصص)");
+  await clickText(page, "#app [data-a='savelabels']", "حفظ التسميات");
+  await closeAlert(page);
+  await clickText(page, "#nav button", "بحث");
+  await openEmployee(page, "FAKE-0001");
+  await assertTxt(page, "تاريخ الالتحاق (مخصص)", "#app", "renamed field label appears in the detail view");
+
+  /* photo */
+  console.log("\n[photo] add a photo, keep it in export/restore");
+  await clickText(page, "#app [data-a='edit']", "تعديل");
+  await (await page.$("#f_img")).uploadFile(PHOTO);
+  await clickText(page, "#app [data-a='save']", "حفظ");
+  await page.waitForFunction(() => !!document.querySelector("#app img.ph"), { timeout: 5000 });
+  assert(true, "photo shown on the detail card");
+
+  /* font-size toggle */
+  console.log("\n[ui] font-size toggle");
+  await click(page, "#fontbtn", 0);
+  assert(
+    (await page.evaluate(() => getComputedStyle(document.documentElement).fontSize)) === "18px",
+    "font-size toggle enlarges the text"
+  );
+
+  /* 5. export -> wipe -> restore */
+  console.log("\n[backup] acceptance test 5");
+  await clickText(page, "#nav button", "إعدادات");
+  await clickText(page, "#app [data-a='export']", "تنزيل نسخة");
+  const bak = await waitForFile(/^backup-\d{4}-\d{2}-\d{2}\.json$/);
+  const bakObj = JSON.parse(fs.readFileSync(bak, "utf8"));
+  assert(bakObj.kind === "emp-backup", "backup file has the right format");
+  assert(bakObj.employees.length === 13, "backup contains all 13 employees");
+  assert(
+    bakObj.employees.some((e) => String(e.photo || "").startsWith("data:image/jpeg")),
+    "backup contains the photo"
+  );
+  await closeAlert(page);
+
+  await clickText(page, "#app [data-a='wipe']", "مسح");
+  await clickText(page, "#app [data-a='wipe']", "تأكيد");
+  await clickText(page, ".modal button", "مسح نهائي");
+  await sleep(300);
+  await clickText(page, "#nav button", "بحث");
+  await assertTxt(page, "لا يوجد أي موظف بعد", "#app", "data wiped");
+  await assertTxt(page, "0 / 0 موظف", "#app", "list is empty after wipe");
+
+  await clickText(page, "#nav button", "إعدادات");
+  await (await page.$("#rfile")).uploadFile(bak);
+  await clickText(page, "#app [data-a='restore']", "استرجاع");
+  await clickText(page, ".modal button", "استبدال واسترجاع");
+  try {
+    await page.waitForFunction(() => /13 \/ 13 موظف/.test(document.getElementById("app").innerText), {
+      timeout: 8000,
+    });
+  } catch (e) {
+    const state = await page.evaluate(() => ({
+      app: document.getElementById("app").innerText.slice(0, 300),
+      modals: [...document.querySelectorAll(".modal")].map((m) => m.innerText.slice(0, 300)),
+    }));
+    console.log("DEBUG after restore:", JSON.stringify(state, null, 2));
+    throw e;
+  }
+  assert(true, "restore brings all 13 employees back");
+  await openEmployee(page, "FAKE-0001");
+  await page.waitForSelector("#app img.ph", { timeout: 5000 });
+  assert(true, "photo came back after restore");
+
+  /* 1. airplane mode: kill the server and reload */
+  console.log("\n[offline] acceptance test 1 — server killed (airplane mode)");
+  server.kill();
+  await waitServer(false);
+  await page.reload({ waitUntil: "load", timeout: 15000 });
+  await unlock(page);
+  await clickText(page, "#nav button", "بحث");
+  await assertTxt(page, "13 / 13 موظف", "#app", "app works with no server running");
+  await clickText(page, "#nav button", "لوحة");
+  await assertTxt(page, "الغيابون حسب النوع", "#app", "dashboard works offline too");
+  await clickText(page, "#nav button", "استيراد CSV");
+  await assertTxt(page, "استيراد CSV", "#app", "import screen renders offline");
+  server = startServer();
+  await waitServer(true);
+  assert(true, "server restarted");
+
+  /* auto-lock after 2 minutes of inactivity (spec) */
+  console.log("\n[idle] auto-lock (waits ~2 minutes)");
+  await clickText(page, "#nav button", "بحث");
+  // reset the inactivity timer deterministically, then idle for 2 minutes
+  await page.evaluate(() => window.dispatchEvent(new KeyboardEvent("keydown", { key: "a" })));
+  const t0 = Date.now();
+  await page.waitForFunction(() => !document.getElementById("lock").hidden, { timeout: 150000 });
+  const secs = Math.round((Date.now() - t0) / 1000);
+  assert(secs >= 115 && secs <= 140, `app auto-locks after ~2 minutes of inactivity (${secs}s)`);
+  await unlock(page);
+  assert(await page.evaluate(() => document.getElementById("lock").hidden), "PIN unlocks the app again");
+
+  /* no JS errors during the whole run */
+  console.log("\n[errors]");
+  assert(pageErrors.length === 0, "no uncaught page errors" + (pageErrors.length ? " — " + pageErrors.join(" | ") : ""));
+  const bad = consoleErrors.filter((e) => !/favicon/i.test(e));
+  assert(bad.length === 0, "no console errors" + (bad.length ? " — " + bad.join(" | ") : ""));
+
+  await browser.close();
+  server.kill();
+
+  console.log(`\nALL PASSED (${passed} assertions)`);
+}
+
+main().then(
+  () => process.exit(0),
+  (err) => {
+    console.error("\n" + (err && err.stack ? err.stack : err));
+    process.exit(1);
+  }
+);

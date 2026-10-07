@@ -1,0 +1,75 @@
+/* متابعة وضعية الموظفين — offline PWA. Look & feel kept from prototype.html */
+:root{
+  --bg:#000;--fg:#39ff14;--dim:#27b50f;--line:#145c08;
+  --warn:#ffd400;--bad:#ff4d4d;
+  box-sizing:border-box;
+  padding-top:env(safe-area-inset-top,0px);
+  padding-bottom:env(safe-area-inset-bottom,0px);
+}
+*{box-sizing:inherit}
+html{scroll-padding-top:env(safe-area-inset-top,0px);font-size:16px}
+body{margin:0;background:var(--bg);color:var(--fg);font:1rem/1.7 system-ui,"Segoe UI",Tahoma,sans-serif;-webkit-tap-highlight-color:transparent}
+main{max-width:720px;margin:auto;padding:12px}
+h1{font-size:1.31rem;margin:4px 0 8px;text-shadow:0 0 10px var(--fg)}
+h2,h3{margin:12px 0 4px;font-size:1.1rem}
+h1,h2{text-shadow:0 0 10px var(--fg)}
+input,select,button,textarea{font:inherit;color:var(--fg);background:#000;border:1px solid var(--fg);border-radius:8px;padding:9px;width:100%;min-height:44px}
+button{width:auto;min-height:44px;cursor:pointer;background:#031a00;margin:2px}
+button:active{background:var(--fg);color:#000}
+:focus-visible{outline:2px solid var(--fg);outline-offset:2px}
+.row{display:flex;gap:6px;align-items:end}
+.row>*{flex:1}
+.row>button{flex:none}
+.card{border:1px solid var(--line);border-radius:10px;padding:8px;margin:8px 0;display:flex;gap:10px;align-items:center}
+.card[data-id]{cursor:pointer}
+.card[data-id]:hover{border-color:var(--fg)}
+.ph{width:56px;height:56px;border-radius:50%;border:1px solid var(--fg);object-fit:cover;flex:none;display:flex;align-items:center;justify-content:center}
+.b{display:inline-block;padding:0 10px;border:1px solid;border-radius:20px;font-size:.875rem}
+.warn{color:var(--warn)}
+.bad{color:var(--bad)}
+label{display:block;margin-top:8px;color:var(--dim)}
+[hidden]{display:none!important}
+nav{display:flex;flex-wrap:wrap;margin-bottom:8px;gap:2px}
+nav button{margin:2px 0}
+small,small *{color:var(--dim)}
+hr{border:none;border-top:1px solid var(--line);margin:14px 0}
+
+/* checklist / inline options */
+.chk{display:flex;gap:8px;align-items:center;margin-top:8px;color:var(--dim)}
+.chk input[type=checkbox]{width:22px;height:22px;min-height:0;flex:none;accent-color:var(--fg)}
+.chk input[type=text],.chk input[type=number],.chk input[type=password]{width:auto;flex:1;min-width:110px}
+
+/* dashboard */
+.stat{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:8px;margin:8px 0}
+.stat>div{border:1px solid var(--line);border-radius:10px;padding:8px}
+.stat b{display:block;font-size:1.6rem;text-shadow:0 0 8px currentColor}
+.grp{border:1px solid var(--line);border-radius:10px;padding:6px 10px;margin:8px 0}
+.grp h3{margin:6px 0}
+.grp .who{display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;border-bottom:1px dashed var(--line);padding:4px 0}
+.grp .who:last-child{border-bottom:none}
+
+/* banner (updates / backup reminder) */
+#banner{border:1px solid var(--warn);border-radius:10px;padding:8px;margin:8px 0;color:var(--warn);display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+#banner.ok{border-color:var(--line);color:var(--dim)}
+
+/* lock screen */
+#lock{position:fixed;inset:0;background:#000;z-index:80;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:16px;text-align:center}
+#lock h2{text-shadow:0 0 10px var(--fg)}
+.dots{font-size:2rem;letter-spacing:.4em;min-height:2.4rem;color:var(--fg)}
+.keys{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;width:100%;max-width:300px;margin:10px 0}
+.keys button{width:100%;min-height:56px;font-size:1.3rem;margin:0}
+.pinnote{max-width:340px;color:var(--warn)}
+
+/* modal */
+.modal{position:fixed;inset:0;background:rgba(0,0,0,.9);z-index:70;display:flex;align-items:center;justify-content:center;padding:12px}
+.modal .box{background:#000;border:1px solid var(--fg);border-radius:12px;padding:14px;max-width:540px;width:100%;max-height:88vh;overflow:auto}
+.modal .box h2{margin-top:0}
+.modal .btns{display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap;margin-top:12px}
+.modal .btns button{margin:0}
+
+/* mapping table (import preview) */
+table{width:100%;border-collapse:collapse;font-size:.9rem}
+th,td{border:1px solid var(--line);padding:6px;text-align:right}
+th{color:var(--dim);font-weight:normal}
+td select{min-height:38px;padding:4px}
+.ok{color:var(--fg)}

@@ -1,0 +1,61 @@
+/**
+ * serve.js — tiny dependency-free static server for local testing.
+ * Correct MIME types (manifest as application/manifest+json, modules as
+ * text/javascript), so the service worker behaves like it will in production.
+ *
+ * Run: node tools/serve.js [port]
+ */
+"use strict";
+
+const http = require("http");
+const fs = require("fs");
+const path = require("path");
+
+const ROOT = path.join(__dirname, "..");
+const PORT = Number(process.argv[2] || process.env.PORT || 8080);
+
+const MIME = {
+  ".html": "text/html; charset=utf-8",
+  ".css": "text/css; charset=utf-8",
+  ".js": "text/javascript; charset=utf-8",
+  ".mjs": "text/javascript; charset=utf-8",
+  ".json": "application/json; charset=utf-8",
+  ".webmanifest": "application/manifest+json; charset=utf-8",
+  ".png": "image/png",
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".svg": "image/svg+xml",
+  ".csv": "text/csv; charset=utf-8",
+  ".ico": "image/x-icon",
+  ".map": "application/json; charset=utf-8",
+  ".txt": "text/plain; charset=utf-8",
+};
+
+http
+  .createServer((req, res) => {
+    let p;
+    try {
+      p = decodeURIComponent(new URL(req.url, "http://x").pathname);
+    } catch (e) {
+      res.writeHead(400).end("bad request");
+      return;
+    }
+    if (p.endsWith("/")) p += "index.html";
+    const file = path.normalize(path.join(ROOT, p));
+    if (!file.startsWith(ROOT)) {
+      res.writeHead(403).end("forbidden");
+      return;
+    }
+    fs.readFile(file, (err, data) => {
+      if (err) {
+        res.writeHead(404, { "Content-Type": "text/plain; charset=utf-8" }).end("404 not found");
+        return;
+      }
+      res.writeHead(200, {
+        "Content-Type": MIME[path.extname(file).toLowerCase()] || "application/octet-stream",
+        "Cache-Control": "no-store",
+      });
+      res.end(data);
+    });
+  })
+  .listen(PORT, () => console.log("serving " + ROOT + " on http://localhost:" + PORT));

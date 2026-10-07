@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>متابعة وضعية الموظفين</title>
+<meta name="theme-color" content="#000000">
+<meta name="description" content="تطبيق لمتابعة وضعية الموظفين، يعمل دون اتصال بالإنترنت. البيانات محفوظة في هذا الجهاز فقط.">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="وضعية الموظفين">
+<meta name="mobile-web-app-capable" content="yes">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon-192.png" type="image/png">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<main>
+  <h1>متابعة وضعية الموظفين</h1>
+  <nav id="nav">
+    <button data-a="home" type="button">بحث</button>
+    <button data-a="dash" type="button">لوحة</button>
+    <button data-a="add" type="button">+ موظف</button>
+    <button data-a="imp" type="button">استيراد CSV</button>
+    <button data-a="set" type="button">إعدادات</button>
+    <button data-a="font" id="fontbtn" type="button" title="حجم الخط" aria-label="حجم الخط">أ+</button>
+  </nav>
+  <div id="banner" hidden></div>
+  <div id="app"></div>
+  <p><small>البيانات محفوظة في هذا الجهاز فقط، ولا تُرسل إلى أي مكان.</small></p>
+</main>
+<div id="lock" hidden></div>
+<script type="module" src="js/app.js"></script>
+</body>
+</html>

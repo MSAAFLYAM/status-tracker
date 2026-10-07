@@ -1,0 +1,21 @@
+# ---------------------------------------------------------------
+# Privacy: no exported / real data may ever be committed.
+# ---------------------------------------------------------------
+*.csv
+!sample-fake.csv
+*.json
+*.xlsx
+*.xls
+*.ods
+
+# Spec + prototype contain a real institution name: never commit them.
+SPEC.md
+prototype.html
+
+# Local tooling / OS junk
+node_modules/
+__pycache__/
+*.pyc
+.DS_Store
+Thumbs.db
+*.log
