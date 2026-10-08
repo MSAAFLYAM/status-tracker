@@ -6,7 +6,7 @@
  * Bump VERSION whenever a file changes.
  */
 
-const VERSION = "v1.1.2";
+const VERSION = "v1.1.3";
 const CACHE = "emp-cache-" + VERSION;
 
 const ASSETS = [
@@ -27,6 +27,7 @@ const ASSETS = [
   "js/csv.js",
   "js/pin.js",
   "js/backup.js",
+  "js/validate.js",
   "js/views/home.js",
   "js/views/detail.js",
   "js/views/form.js",

@@ -5,6 +5,7 @@
 
 import { nz, download, today } from "./util.js";
 import { ALIASES, FIELDS, FAM_LABEL } from "./config.js";
+import { cleanCell, LIMITS } from "./validate.js";
 
 /** RFC-ish CSV parser (quotes, escaped quotes, CR/LF), separator auto-detected. */
 export function parse(t) {
@@ -49,22 +50,29 @@ export const headerKeys = (headerRow) =>
 
 /**
  * Apply parsed rows onto D (mutates). Same matricule => update, else create.
- * Returns { updated, created, skipped: [{line, reason}] }.
+ * Every cell is cleaned first (control characters stripped, length capped);
+ * every skipped row is reported with a reason.
+ * Returns { updated, created, cleaned, skipped: [{line, reason}] }.
  */
 export function importRows(rows, D, uid) {
-  const report = { updated: 0, created: 0, skipped: [] };
+  const report = { updated: 0, created: 0, cleaned: 0, skipped: [] };
   if (!rows.length) return report;
   const ks = headerKeys(rows[0]);
   rows.slice(1).forEach((row, i) => {
     const line = i + 2; // 1-based, header is line 1
     const o = {};
+    let dirty = false;
     ks.forEach((k, j) => {
-      if (k) o[k] = (row[j] || "").trim();
+      if (!k) return;
+      const c = cleanCell(String(row[j] || "").trim(), LIMITS[k] || LIMITS.svc);
+      if (c.dirty) dirty = true;
+      o[k] = c.v;
     });
     if (!o.mat && !o.nom) {
       report.skipped.push({ line, reason: "لا يوجد رقم معرّف ولا اسم" });
       return;
     }
+    if (dirty) report.cleaned++;
     const x = o.mat ? D.find((e) => e.mat == o.mat) : null;
     if (x) {
       Object.assign(x, o);

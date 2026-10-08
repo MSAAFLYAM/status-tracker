@@ -132,7 +132,7 @@ node tools/e2e.js           # يشغّل خادمًا محليًا ويوقفه 
 index.html              الواجهة (عربية، RTL)
 style.css               التنسيق: أسود #000 وأخضر متوهج #39ff14
 manifest.webmanifest    ملف التثبيت (lang=ar, dir=rtl, standalone)
-sw.js                   الذاكرة المؤقتة + التحديث (VERSION v1.1.2)
+sw.js                   الذاكرة المؤقتة + التحديث (VERSION v1.1.3)
 icons/                  192، 512، وmaskable (توليد محلي بـ tools/make-icons.js)
 js/app.js               نقطة البداية: الحالة، التنقل، القفل، التحديث
 js/db.js                IndexedDB + التخزين الدائم
@@ -140,6 +140,7 @@ js/status.js            حساب الوضعية الحالية وتاريخ ال
 js/search.js            البحث + التطبيع العربي
 js/csv.js               استيراد/تصدير CSV
 js/backup.js            نسخ احتياطي واسترجاع (مع تشفير اختياري)
+js/validate.js          تحقق صارم من مخطط النسخ والاستيراد، مع تقرير الرفض
 js/pin.js               القفل بالـ PIN (PBKDF2)
 js/views/               الشاشات: بحث، تفاصيل، استمارة، استيراد، لوحة، إعدادات
 sample-fake.csv         بيانات تجريبية وهمية للاختبار

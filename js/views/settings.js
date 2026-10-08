@@ -3,6 +3,7 @@
 
 import { $, esc, uid, confirmBox, alertBox } from "../util.js";
 import { FIELDS, FAM_LABEL } from "../config.js";
+import { LIMITS } from "../validate.js";
 import { makePin, checkPin } from "../pin.js";
 import { exportBackup, importBackup, backupAge } from "../backup.js";
 import { exportCsv } from "../csv.js";
@@ -168,24 +169,34 @@ export function mount(A) {
     if (a === "restore") {
       const f = $("#rfile").files[0];
       if (!f) return alertBox(`<p class="bad">اختر ملف النسخة أولًا.</p>`);
-      let emp;
+      if (f.size > LIMITS.maxFile) return alertBox(`<p class="bad">الملف كبير جدًا (الحد المسموح 250MB).</p>`);
+      let res;
       try {
-        emp = await importBackup(f, $("#rpw").value || null);
+        res = await importBackup(f, $("#rpw").value || null);
       } catch (e) {
         return alertBox(`<p class="bad">${esc(e.message)}</p>`);
       }
+      const r = res.report;
+      /* لا نستبدل شيئًا إذا لم يبقَ أي سجل صالح: المسح الصامت ممنوع. */
+      if (r.total > 0 && !res.employees.length)
+        return alertBox(
+          `<p class="bad">لا يوجد أي سجل صالح في الملف (المتجاهلة: ${r.rejected.length}) — لم يتغيّر شيء.</p>`
+        );
       const ok = await confirmBox({
         title: "استرجاع النسخة",
-        body: `<p>النسخة تحتوي على <b>${emp.length}</b> موظف. سيتم <b class="bad">استبدال</b> كل البيانات الحالية (${
-          A.D.length
-        } موظف).</p>`,
+        body: `<p>النسخة تحتوي على <b>${res.employees.length}</b> موظف${
+          r.rejected.length ? ` (رُفضت <b>${r.rejected.length}</b> سجلات غير صالحة)` : ""
+        }. سيتم <b class="bad">استبدال</b> كل البيانات الحالية (${A.D.length} موظف).</p>`,
         ok: "استبدال واسترجاع",
         danger: true,
       });
       if (!ok) return;
-      await A.replaceData(emp);
+      await A.replaceData(res.employees);
       if (A.banner) A.banner();
-      return A.go("home");
+      A.go("home");
+      if (r.rejected.length || r.periodsDropped || r.photosDropped || r.fieldsCleaned)
+        return alertBox(restoreReport(r));
+      return;
     }
 
     if (a === "wipe") {
@@ -206,6 +217,24 @@ export function mount(A) {
       return A.render();
     }
   };
+}
+
+/** تقرير الاسترجاع: كل سجل مرفوض وكل حقل مُنظَّف يظهر للمستخدم بوضوح. */
+function restoreReport(r) {
+  const out = [`<p class="ok">تم استرجاع ${r.kept} موظفًا.</p>`];
+  if (r.rejected.length)
+    out.push(
+      `<p class="bad">السجلات المتجاهلة: ${r.rejected.length}</p><ul>${r.rejected
+        .slice(0, 5)
+        .map((x) => `<li>السجل ${x.i}: ${esc(x.reason)}</li>`)
+        .join("")}</ul>` +
+        (r.rejected.length > 5 ? `<p><small>و${r.rejected.length - 5} سجلات أخرى…</small></p>` : "")
+    );
+  if (r.periodsDropped)
+    out.push(`<p class="warn">الأرصدة المتجاهلة: ${r.periodsDropped} (تاريخ أو مدة غير صالح).</p>`);
+  if (r.photosDropped) out.push(`<p class="warn">الصور المحذوفة: ${r.photosDropped} (غير صالحة).</p>`);
+  if (r.fieldsCleaned) out.push(`<p class="warn">الحقول المنظَّفة: ${r.fieldsCleaned} (نوع أو طول غير صالح).</p>`);
+  return out.join("");
 }
 
 async function changePin(A) {

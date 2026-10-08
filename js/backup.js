@@ -2,7 +2,8 @@
  * optionally encrypted with a password (PBKDF2-SHA256 + AES-GCM).
  * Nothing is ever uploaded — the file is downloaded to the device only. */
 
-import { b64ToBytes, bytesToB64, today, safePhoto } from "./util.js";
+import { b64ToBytes, bytesToB64, today } from "./util.js";
+import { sanitizeBackup } from "./validate.js";
 import { BACKUP_REMIND_DAYS } from "./config.js";
 
 const KIND = "emp-backup";
@@ -54,7 +55,8 @@ export async function exportBackup(D, password) {
   return name;
 }
 
-/** Read a backup file (File object) and return the employees array.
+/** Read a backup file (File object) and validate it.
+ *  Returns { employees, report } — report lists rejected/cleaned records.
  *  Throws an Error with an Arabic message on any problem. */
 export async function importBackup(file, password) {
   let obj;
@@ -79,16 +81,9 @@ export async function importBackup(file, password) {
     }
   }
   if (!obj || obj.kind !== KIND || !Array.isArray(obj.employees)) throw new Error("محتوى النسخة غير صالح");
-  /* Drop any photo that is not a valid data:image URL: a crafted backup can
-   * otherwise smuggle markup into <img src="…">. */
-  return obj.employees.map((e) => {
-    if (e && typeof e === "object" && e.photo && !safePhoto(e.photo)) {
-      const c = { ...e };
-      delete c.photo;
-      return c;
-    }
-    return e;
-  });
+  /* M4: strict schema validation — records are whitelisted, typed, capped;
+   * bad records are rejected and bad fields cleaned, everything reported. */
+  return sanitizeBackup(obj.employees);
 }
 
 /** true if we should remind the user to make a backup (never / > 30 days ago). */

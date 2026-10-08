@@ -12,6 +12,7 @@ export function html(A) {
   const L = (k) => A.S.labels[k] || (FIELDS.find((f) => f[0] === k) || [, k])[1];
   const c = currentPeriod(e);
   const rd = c ? returnDate(c) : null;
+  const tn = e.joined ? tenure(e.joined) : ""; // "" عند تاريخ غير صالح — لا شاشة تنهار
   const ps = [...(e.periods || [])].sort((a, b) => (b.start || "").localeCompare(a.start || ""));
   const editing = A.V.editPid ? (e.periods || []).find((p) => p.pid === A.V.editPid) : null;
 
@@ -32,7 +33,7 @@ export function html(A) {
     <div class="row" id="pr" ${noDate ? "hidden" : ""}>
       <div><label>تاريخ البداية</label><input id="ps" type="date" value="${esc(editing && !editing.nd ? editing.start : "")}"></div>
       <div><label>المدة بالأيام (0 = غير محددة)</label><input id="pd" type="number" min="0" inputmode="numeric" value="${
-        editing ? editing.days : ""
+        editing ? esc(editing.days) : ""
       }" placeholder="عدد الأيام"></div>
     </div>
     <p id="perr" class="bad" role="alert"></p>
@@ -63,7 +64,7 @@ export function html(A) {
   }</div></div>
   <p>${FIELDS.map((f) => esc(L(f[0])) + ": " + (esc(e[f[0]]) || "—")).join("<br>")}<br>${esc(
     A.S.labels.fam || FAM_LABEL
-  )}: ${esc(e.fam) || "—"}${e.joined ? "<br>الأقدمية: " + esc(tenure(e.joined)) : ""}</p>
+  )}: ${esc(e.fam) || "—"}${tn ? "<br>الأقدمية: " + esc(tn) : ""}</p>
   <button data-a="edit" type="button">تعديل</button>
   <button data-a="del" type="button">حذف الموظف</button>
   <button data-a="home" type="button">رجوع</button>

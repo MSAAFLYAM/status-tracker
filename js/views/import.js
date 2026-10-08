@@ -33,6 +33,7 @@ export function mount(A) {
     out.innerHTML = `<p class="ok">تمت معالجة ${rep.created + rep.updated} موظف (جديد: ${rep.created}، محدّث: ${
       rep.updated
     }).</p>` +
+      (rep.cleaned ? `<p class="warn">تم تنظيف ${rep.cleaned} سطر (أحرف تحكم أو أطوال تجاوزت الحد).</p>` : "") +
       (rep.skipped.length
         ? `<p class="warn">تم تجاهل ${rep.skipped.length} سطر:</p><ul>${rep.skipped
             .slice(0, 20)

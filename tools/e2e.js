@@ -486,7 +486,11 @@ async function main() {
   await (await page.$("#rfile")).uploadFile(evilPath);
   await clickText(page, "#app [data-a='restore']", "استرجاع");
   await clickText(page, ".modal button", "استبدال واسترجاع");
-  await sleep(500);
+  /* M4: the dropped photo is reported, not silently ignored */
+  await page.waitForFunction(() => document.body.innerText.includes("الصور المحذوفة: 1"), { timeout: 8000 });
+  assert(true, "the invalid photo drop is reported to the user");
+  await clickText(page, ".modal button", "حسنًا");
+  await sleep(300);
   const hygiene = await page.evaluate(() => ({
     fired: !!window.__xss,
     onerrorImgs: document.querySelectorAll("[onerror]").length,
@@ -517,6 +521,113 @@ async function main() {
   await openEmployee(page, "FAKE-0001");
   await page.waitForSelector("#app img.ph", { timeout: 5000 });
   assert(true, "photo still intact after the attack test");
+
+  /* ---------------- M4: strict schema validation on restore ---------------- */
+  console.log("\n[security] restore validates the schema (reject / clean / report)");
+
+  /* (a) a backup where nothing is valid must NOT wipe the current data */
+  const junkBak = { ...legitBak, employees: ["junk", 42, null, { periods: "x" }] };
+  const junkPath = path.join(DL, "junk-backup.json");
+  fs.writeFileSync(junkPath, JSON.stringify(junkBak), "utf8");
+  await clickText(page, "#nav button", "إعدادات");
+  await (await page.$("#rfile")).uploadFile(junkPath);
+  await clickText(page, "#app [data-a='restore']", "استرجاع");
+  await page.waitForFunction(() => document.body.innerText.includes("لا يوجد أي سجل صالح"), { timeout: 8000 });
+  assert(true, "an all-invalid backup is refused instead of wiping the data");
+  assert(await hasTxt(page, "لم يتغيّر شيء", "body"), "the refusal says nothing was changed");
+  await clickText(page, ".modal button", "حسنًا");
+  await clickText(page, "#nav button", "بحث");
+  await search(page, ""); // V.q still holds the previous query; clear it for the count
+  await page.waitForFunction(() => /13 \/ 13 موظف/.test(document.getElementById("app").innerText), { timeout: 8000 });
+  assert(true, "data untouched after the refused restore");
+
+  /* (b) mixed backup: some records rejected, some fields/periods cleaned, all reported */
+  const mDate = todayStr();
+  const mixedBak = {
+    ...legitBak,
+    employees: legitBak.employees.concat([
+      { id: "bad1", periods: "nope", nom: "مرفوض" }, // rejected: periods not an array
+      "just a string", // rejected: not an object
+      { nom: "بلا معرّف", periods: [] }, // rejected: missing id
+      {
+        id: "ok1",
+        mat: "CLEAN-1",
+        nom: 12345, // cleaned: number -> string
+        prenom: true, // cleaned: boolean -> string
+        periods: [
+          { pid: "p1", tid: "t01", type: "عطلة", start: "not-a-date", days: 5, nd: false }, // dropped
+          { pid: "p2", tid: "t01", type: "عطلة", start: mDate, days: 5, nd: false }, // kept
+          "junk", // dropped
+        ],
+      },
+      { id: "ok2", mat: "X".repeat(500), nom: "طويل جدًا", periods: [] }, // cleaned: mat capped at 64
+      { id: legitBak.employees[0].id, mat: "DUP", nom: "مكرر", periods: [] }, // rejected: duplicate id
+    ]),
+  };
+  const mixedPath = path.join(DL, "mixed-backup.json");
+  fs.writeFileSync(mixedPath, JSON.stringify(mixedBak), "utf8");
+  await clickText(page, "#nav button", "إعدادات");
+  await (await page.$("#rfile")).uploadFile(mixedPath);
+  await clickText(page, "#app [data-a='restore']", "استرجاع");
+  assert(await hasTxt(page, "رُفضت 4 سجلات", "body"), "the confirm dialog warns about rejected records");
+  await clickText(page, ".modal button", "استبدال واسترجاع");
+  await page.waitForFunction(() => document.body.innerText.includes("السجلات المتجاهلة: 4"), { timeout: 8000 });
+  assert(true, "report lists the rejected record count");
+  assert(await hasTxt(page, "قائمة الأرصدة غير صالحة", "body"), "report gives the rejection reason");
+  assert(await hasTxt(page, "السجل 14", "body"), "report identifies the offending record");
+  assert(await hasTxt(page, "الأرصدة المتجاهلة: 2", "body"), "report lists the dropped periods");
+  assert(await hasTxt(page, "الحقول المنظَّفة: 3", "body"), "report lists the cleaned fields");
+  await clickText(page, ".modal button", "حسنًا");
+  await page.waitForFunction(() => /15 \/ 15 موظف/.test(document.getElementById("app").innerText), { timeout: 8000 });
+  assert(true, "15 valid employees kept (13 + 2 cleaned)");
+
+  await clickText(page, "#nav button", "لوحة");
+  assert(await hasTxt(page, "لوحة الوضعية"), "dashboard renders after a hostile restore");
+  await clickText(page, "#nav button", "بحث");
+  await openEmployee(page, "CLEAN-1");
+  assert(await hasTxt(page, "من " + mDate), "only the valid period survived validation");
+  await clickText(page, "#nav button", "بحث");
+  const homeTxt = await page.evaluate(() => document.getElementById("app").innerText);
+  assert(!/X{65}/.test(homeTxt), "over-long field was capped to the schema limit");
+
+  /* (c) a clean backup reports nothing and restores silently */
+  await clickText(page, "#nav button", "إعدادات");
+  await (await page.$("#rfile")).uploadFile(bak);
+  await clickText(page, "#app [data-a='restore']", "استرجاع");
+  await clickText(page, ".modal button", "استبدال واسترجاع");
+  await page.waitForFunction(() => /13 \/ 13 موظف/.test(document.getElementById("app").innerText), { timeout: 8000 });
+  assert((await page.$(".modal")) === null, "a clean restore raises no report dialog");
+
+  /* ---------------- M4: CSV cells are cleaned and reported ---------------- */
+  console.log("\n[security] CSV import cleans hostile cells");
+  const csvDirty =
+    "\uFEFF" +
+    ["الرقم المهني;الاسم العائلي;الاسم الشخصي;العنوان", `CSV-1;${"ن".repeat(300)};اختبار\u0007عنوان;شارع الاختبار`].join(
+      "\r\n"
+    );
+  const csvPath = path.join(DL, "dirty.csv");
+  fs.writeFileSync(csvPath, csvDirty, "utf8");
+  await clickText(page, "#nav button", "استيراد CSV");
+  await (await page.$("#csv")).uploadFile(csvPath);
+  await page.waitForFunction(() => document.getElementById("msg").innerText.includes("تمت معالجة 1"), {
+    timeout: 8000,
+  });
+  assert(await hasTxt(page, "تم تنظيف 1"), "the CSV report shows the cleaned row");
+  await clickText(page, ".modal button", "حسنًا");
+  await clickText(page, "#nav button", "بحث");
+  await openEmployee(page, "CSV-1");
+  const hdr = await page.evaluate(() => (document.querySelector("#app h2") || { textContent: "" }).textContent);
+  const hdrLen = hdr.length;
+  assert(hdrLen >= 100 && hdrLen <= 115, `the 300-char name was capped (header shows ${hdrLen} chars)`);
+  assert(!/[\u0000-\u001F\u007F]/.test(hdr), "control characters were stripped from the imported values");
+
+  /* back to the legitimate data set for the offline test */
+  await clickText(page, "#nav button", "إعدادات");
+  await (await page.$("#rfile")).uploadFile(bak);
+  await clickText(page, "#app [data-a='restore']", "استرجاع");
+  await clickText(page, ".modal button", "استبدال واسترجاع");
+  await page.waitForFunction(() => /13 \/ 13 موظف/.test(document.getElementById("app").innerText), { timeout: 8000 });
+  assert(true, "13/13 restored before the offline test");
 
   /* 1. airplane mode: kill the server and reload */
   console.log("\n[offline] acceptance test 1 — server killed (airplane mode)");

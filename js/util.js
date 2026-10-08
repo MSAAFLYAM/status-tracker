@@ -29,16 +29,26 @@ export const safePhoto = (v) =>
 
 export const today = () => new Date(Date.now() - new Date().getTimezoneOffset() * 6e4).toISOString().slice(0, 10);
 
+/** تاريخ صالح بصيغة YYYY-MM-DD (يرفض 2026-02-31 وما لا يليق بالقالب). */
+export const validDate = (s) => {
+  if (typeof s !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(s)) return false;
+  const d = new Date(s + "T00:00:00Z");
+  return !isNaN(d.getTime()) && d.toISOString().slice(0, 10) === s;
+};
+
+/** إضافة أيام — يعيد "" بدل الانهيار على تاريخ تالف (لا شاشة تنهار أبدًا). */
 export const add = (s, n) => {
+  if (!validDate(s)) return "";
   const d = new Date(s + "T00:00:00Z");
   d.setUTCDate(d.getUTCDate() + n);
   return d.toISOString().slice(0, 10);
 };
 
-export const endOf = (p) => (p.days > 0 ? add(p.start, p.days - 1) : null);
+export const endOf = (p) => (p && p.days > 0 && validDate(p.start) ? add(p.start, p.days - 1) : null);
 
-/** سنوات وأشهر منذ تاريخ الولوج (seniority / الأقدمية). */
+/** سنوات وأشهر منذ تاريخ الولوج (seniority / الأقدمية) — "" عند تاريخ غير صالح. */
 export const tenure = (s) => {
+  if (!validDate(s)) return "";
   const a = new Date(s),
     b = new Date();
   let m = (b.getFullYear() - a.getFullYear()) * 12 + b.getMonth() - a.getMonth();
