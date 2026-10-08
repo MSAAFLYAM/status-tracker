@@ -769,6 +769,50 @@ async function main() {
   });
   assert(true, "13/13 restored before the offline test (final)");
 
+  /* ---------------- M2: backgrounding locks immediately ---------------- */
+  console.log("\n[lock] hiding the page locks immediately (M2)");
+
+  /* (a) visibilitychange -> hidden */
+  await page.evaluate(() => {
+    Object.defineProperty(document, "hidden", { configurable: true, get: () => true });
+    Object.defineProperty(document, "visibilityState", { configurable: true, get: () => "hidden" });
+    document.dispatchEvent(new Event("visibilitychange"));
+  });
+  await page.waitForFunction(
+    () => {
+      const l = document.getElementById("lock");
+      return l && !l.hidden;
+    },
+    { timeout: 3000 }
+  );
+  assert(true, "hiding the page locks the app immediately");
+  assert(
+    await page.evaluate(() => document.getElementById("app").hidden === true),
+    "the app content sits behind the lock"
+  );
+  assert(
+    await page.evaluate(() => document.body.style.visibility === "hidden"),
+    "content is hidden from the app-switcher snapshot"
+  );
+
+  /* coming back to the foreground */
+  await page.evaluate(() => {
+    delete document.hidden;
+    delete document.visibilityState;
+    document.dispatchEvent(new Event("visibilitychange"));
+  });
+  assert(await page.evaluate(() => document.body.style.visibility === ""), "visibility restored when returning");
+  await unlock(page);
+
+  /* (b) pagehide / pageshow */
+  await page.evaluate(() => window.dispatchEvent(new Event("pagehide")));
+  await page.waitForFunction(() => !document.getElementById("lock").hidden, { timeout: 3000 });
+  assert(true, "pagehide locks too");
+  await page.evaluate(() => window.dispatchEvent(new Event("pageshow")));
+  assert(await page.evaluate(() => document.body.style.visibility === ""), "pageshow restores visibility");
+  await unlock(page);
+  assert(await hasTxt(page, "موظف", "#app"), "the app is usable after relocking");
+
   /* 1. airplane mode: kill the server and reload */
   console.log("\n[offline] acceptance test 1 — server killed (airplane mode)");
   server.kill();

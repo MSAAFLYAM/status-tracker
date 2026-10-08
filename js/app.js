@@ -3,7 +3,7 @@
 
 import { $, esc, alertBox } from "./util.js";
 import { loadAll, saveData, saveSettings, requestPersist } from "./db.js";
-import { showLock, setUnlockCb, setRecGetter, bump, isLocked } from "./pin.js";
+import { showLock, setUnlockCb, setRecGetter, bump, isLocked, lock } from "./pin.js";
 import { backupDue } from "./backup.js";
 import * as home from "./views/home.js";
 import * as dashboard from "./views/dashboard.js";
@@ -230,7 +230,21 @@ function dbErrorScreen() {
 
   const act = () => bump();
   ["pointerdown", "keydown", "touchstart"].forEach((t) => window.addEventListener(t, act, { passive: true }));
+
+  /* الإخفاء (تبديل التطبيقات أو الإغلاق) = قفل فوري، مع إخفاء محتوى الصفحة
+   * عن لقطة مبدّل التطبيقات قدر الإمكان (M2). */
+  const background = () => {
+    lock();
+    document.body.style.visibility = "hidden";
+  };
+  const foreground = () => {
+    document.body.style.visibility = "";
+    bump();
+  };
   document.addEventListener("visibilitychange", () => {
-    if (!document.hidden) bump();
+    if (document.hidden) background();
+    else foreground();
   });
+  window.addEventListener("pagehide", background);
+  window.addEventListener("pageshow", foreground);
 })();
