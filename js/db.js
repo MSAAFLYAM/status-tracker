@@ -37,16 +37,45 @@ function get(key) {
   );
 }
 
+/** فشل الحفظ: السبب + رسالة عربية جاهزة للعرض. */
+const fail = (reason, error) => ({
+  ok: false,
+  reason, // "quota" | "unavailable" | "unknown"
+  message:
+    reason === "quota"
+      ? "المساحة ممتلئة: تعذّر حفظ البيانات على هذا الجهاز"
+      : reason === "unavailable"
+      ? "قاعدة البيانات (IndexedDB) غير متاحة: تعذّر حفظ البيانات"
+      : "تعذّر حفظ البيانات على هذا الجهاز",
+  detail: error ? String(error.message || error) : "",
+});
+const reasonOf = (e) => (e && e.name === "QuotaExceededError" ? "quota" : "unknown");
+
+/** يكتب المفتاح ويبلّغ عن النتيجة: { ok: true } أو { ok:false, reason, message }.
+ *  لا يُبتلع الفشل أبدًا (M5). */
 function put(key, value) {
   return open().then(
     (db) =>
       new Promise((resolve) => {
-        const tx = db.transaction(STORE, "readwrite");
-        tx.objectStore(STORE).put(value, key);
-        tx.oncomplete = () => resolve(true);
-        tx.onerror = () => resolve(false);
+        let tx, r;
+        try {
+          tx = db.transaction(STORE, "readwrite");
+          r = tx.objectStore(STORE).put(value, key);
+        } catch (e) {
+          return resolve(fail(reasonOf(e), e));
+        }
+        let done = false;
+        const finish = (res) => {
+          if (!done) {
+            done = true;
+            resolve(res);
+          }
+        };
+        if (r) r.onerror = () => finish(fail(reasonOf(r.error), r.error));
+        tx.onabort = () => finish(fail(reasonOf(tx.error), tx.error));
+        tx.oncomplete = () => finish({ ok: true });
       }),
-    () => false
+    (e) => resolve(fail(e && e.name === "QuotaExceededError" ? "quota" : "unavailable", e))
   );
 }
 
@@ -54,11 +83,27 @@ export function defaultSettings() {
   return { pin: null, types: DEFAULT_TYPES.map((t) => ({ ...t })), labels: {}, font: 0, lastBackup: null };
 }
 
-export async function loadAll() {
-  const [d, s] = await Promise.all([get("d"), get("s")]);
+function buildSettings(s) {
   const S = Object.assign(defaultSettings(), s || {});
   if (!Array.isArray(S.types) || !S.types.length) S.types = DEFAULT_TYPES.map((t) => ({ ...t }));
-  return { D: Array.isArray(d) ? d : null, S };
+  return S;
+}
+
+/** يقرأ الكل. عند تعذّر فتح/قراءة القاعدة يعود { error } حتى تعرض الشاشة
+ *  المانعة بدل تطبيق فارغ يكذب على المستخدم (M5). */
+export async function loadAll() {
+  try {
+    await open();
+  } catch (e) {
+    return { D: null, S: defaultSettings(), error: "unavailable" };
+  }
+  let d, s;
+  try {
+    [d, s] = await Promise.all([get("d"), get("s")]);
+  } catch (e) {
+    return { D: null, S: defaultSettings(), error: "unavailable" };
+  }
+  return { D: Array.isArray(d) ? d : null, S: buildSettings(s) };
 }
 
 export const saveData = (D) => put("d", D);

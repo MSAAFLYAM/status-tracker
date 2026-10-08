@@ -132,10 +132,10 @@ node tools/e2e.js           # يشغّل خادمًا محليًا ويوقفه 
 index.html              الواجهة (عربية، RTL)
 style.css               التنسيق: أسود #000 وأخضر متوهج #39ff14
 manifest.webmanifest    ملف التثبيت (lang=ar, dir=rtl, standalone)
-sw.js                   الذاكرة المؤقتة + التحديث (VERSION v1.1.3)
+sw.js                   الذاكرة المؤقتة + التحديث (VERSION v1.1.4)
 icons/                  192، 512، وmaskable (توليد محلي بـ tools/make-icons.js)
 js/app.js               نقطة البداية: الحالة، التنقل، القفل، التحديث
-js/db.js                IndexedDB + التخزين الدائم
+js/db.js                IndexedDB + التخزين الدائم + بلاغ فشل الحفظ
 js/status.js            حساب الوضعية الحالية وتاريخ العودة
 js/search.js            البحث + التطبيع العربي
 js/csv.js               استيراد/تصدير CSV

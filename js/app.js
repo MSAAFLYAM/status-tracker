@@ -1,7 +1,7 @@
 /* App bootstrap: state, routing, navigation, service worker + update flow,
  * PIN lock wiring, backup reminder. */
 
-import { $ } from "./util.js";
+import { $, esc, alertBox } from "./util.js";
 import { loadAll, saveData, saveSettings, requestPersist } from "./db.js";
 import { showLock, setUnlockCb, setRecGetter, bump, isLocked } from "./pin.js";
 import { backupDue } from "./backup.js";
@@ -22,6 +22,23 @@ let updateAccepted = false;
 
 const V = { v: "home", q: "", id: null, editPid: null };
 
+/** كل حفظ يمرّ من هنا: الفشل يظهر للمستخدم برسالة عربية واضحة ولا يُبتلع
+ *  بصمت (M5). يعيد true فقط إذا وصلت البيانات فعلًا إلى التخزين. */
+async function persist(p) {
+  let r;
+  try {
+    r = await p;
+  } catch (e) {
+    r = { ok: false, reason: "unknown", message: "تعذّر حفظ البيانات على هذا الجهاز" };
+  }
+  if (r && r.ok) return true;
+  await alertBox(
+    `<p class="bad">${esc((r && r.message) || "تعذّر حفظ البيانات على هذا الجهاز")}.</p>
+     <p><small>التغييرات الحالية غير محفوظة: قد يعود المتصفح إلى الحالة السابقة بعد إعادة الفتح. حرّر مساحة أو أعد المحاولة لاحقًا.</small></p>`
+  );
+  return false;
+}
+
 const A = {
   get D() {
     return D;
@@ -38,14 +55,14 @@ const A = {
   V,
   render,
   go,
-  save: () => saveData(D),
-  saveS: () => saveSettings(S),
+  save: () => persist(saveData(D)),
+  saveS: () => persist(saveSettings(S)),
   replaceData: async (arr) => {
     D = arr;
     V.q = "";
     V.id = null;
     V.editPid = null;
-    await saveData(D);
+    return persist(saveData(D));
   },
   applyFont,
   banner: () => updateBanner(),
@@ -162,14 +179,33 @@ $("#nav").addEventListener("click", (ev) => {
     applyFont();
     b.title = "حجم الخط";
     b.textContent = ["أ+", "أ++", "أ+++"][S.font];
-    saveSettings(S);
+    persist(saveSettings(S));
   }
 });
 
 /* ----------------------------------------------------------------- boot --- */
 
+/** القاعدة لا تُفتح؟ شاشة مانعة بدل تطبيق فارغ يُظهر «لا يوجد أي موظف»
+ *  كأنها الحقيقة (M5). */
+function dbErrorScreen() {
+  const nav = document.getElementById("nav");
+  if (nav) nav.style.display = "none";
+  const banner = document.getElementById("banner");
+  if (banner) banner.hidden = true;
+  const app = document.getElementById("app");
+  app.hidden = false;
+  app.innerHTML = `<h2>تعذّر فتح قاعدة البيانات</h2>
+    <p class="bad">لا يمكن قراءة البيانات المحفوظة في هذا الجهاز، لذلك أوقفنا العرض حتى لا تبدو بيانات فارغة بيانات صحيحة. لم يُحذف شيء.</p>
+    <p><small>الأسباب المحتملة: وضع التصفح الخاص، حظر تخزين الموقع، أو امتلاء مساحة القرص.</small></p>
+    <button type="button" id="retrybtn">إعادة المحاولة</button>`;
+  app.onclick = (ev) => {
+    if (ev.target.closest("#retrybtn")) location.reload();
+  };
+}
+
 (async function boot() {
   const r = await loadAll();
+  if (r.error) return dbErrorScreen();
   D = r.D || [];
   S = r.S;
   applyFont();
@@ -180,7 +216,7 @@ $("#nav").addEventListener("click", (ev) => {
   setUnlockCb(async (rec) => {
     if (rec) {
       S.pin = rec;
-      await saveSettings(S);
+      await persist(saveSettings(S));
     }
     render();
     updateBanner();

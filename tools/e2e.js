@@ -629,6 +629,74 @@ async function main() {
   await page.waitForFunction(() => /13 \/ 13 موظف/.test(document.getElementById("app").innerText), { timeout: 8000 });
   assert(true, "13/13 restored before the offline test");
 
+  /* ---------------- M5: save failures are visible, DB failure blocks -------- */
+  console.log("\n[storage] save failures surface an Arabic error; DB failure blocks");
+
+  /* (a) a failing save must show a visible Arabic error, never a fake success */
+  await clickText(page, "#nav button", "إعدادات");
+  await page.evaluate(() => {
+    window.__origPut = IDBObjectStore.prototype.put;
+    IDBObjectStore.prototype.put = function () {
+      const e = new Error("quota");
+      e.name = "QuotaExceededError";
+      throw e;
+    };
+  });
+  await clickText(page, "#app [data-a='savelabels']", "حفظ التسميات");
+  await page.waitForFunction(() => document.body.innerText.includes("المساحة ممتلئة"), { timeout: 8000 });
+  assert(true, "a failed save shows a visible Arabic error");
+  assert(
+    !(await page.evaluate(() => document.body.innerText.includes("تم حفظ التسميات"))),
+    "no fake success message after a failed save"
+  );
+  await clickText(page, ".modal button", "حسنًا");
+  await page.evaluate(() => {
+    IDBObjectStore.prototype.put = window.__origPut;
+  });
+  assert(await hasTxt(page, "الإعدادات"), "the settings screen survived the failed save");
+
+  /* (b) if IndexedDB cannot open: blocking screen, never a misleading empty app */
+  await page.evaluate(() => localStorage.setItem("failIDB", "1"));
+  await page.evaluateOnNewDocument(() => {
+    try {
+      if (localStorage.getItem("failIDB") === "1" && window.indexedDB) {
+        indexedDB.open = function () {
+          const req = { error: null, onsuccess: null, onerror: null, onupgradeneeded: null };
+          setTimeout(() => {
+            req.error = new Error("blocked");
+            if (req.onerror) req.onerror({ target: req });
+          }, 0);
+          return req;
+        };
+      }
+    } catch (e) {
+      /* ignore */
+    }
+  });
+  await page.reload({ waitUntil: "load", timeout: 15000 });
+  await page.waitForFunction(() => document.getElementById("app").innerText.includes("تعذّر فتح قاعدة البيانات"), {
+    timeout: 10000,
+  });
+  assert(true, "a blocking error screen replaces the empty app");
+  assert(
+    (await page.evaluate(() => document.getElementById("nav").style.display)) === "none",
+    "navigation is hidden on the blocking screen"
+  );
+  assert(
+    !(await page.evaluate(() => document.getElementById("app").innerText.includes("لا يوجد أي موظف"))),
+    "no misleading empty state is shown"
+  );
+  assert(!!(await page.$("#retrybtn")), "a retry button is offered");
+
+  /* recover */
+  await page.evaluate(() => localStorage.removeItem("failIDB"));
+  await page.reload({ waitUntil: "load", timeout: 15000 });
+  await unlock(page);
+  await page.waitForFunction(() => /13 \/ 13 موظف/.test(document.getElementById("app").innerText), {
+    timeout: 10000,
+  });
+  assert(true, "the app boots normally after the database recovers");
+
   /* 1. airplane mode: kill the server and reload */
   console.log("\n[offline] acceptance test 1 — server killed (airplane mode)");
   server.kill();

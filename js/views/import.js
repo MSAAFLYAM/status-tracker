@@ -29,10 +29,11 @@ export function mount(A) {
       return;
     }
     const rep = importRows(rows, A.D, uid);
-    await A.save();
-    out.innerHTML = `<p class="ok">تمت معالجة ${rep.created + rep.updated} موظف (جديد: ${rep.created}، محدّث: ${
-      rep.updated
-    }).</p>` +
+    const ok = await A.save();
+    const head = ok
+      ? `<p class="ok">تمت معالجة ${rep.created + rep.updated} موظف (جديد: ${rep.created}، محدّث: ${rep.updated}).</p>`
+      : `<p class="bad">تمت معالجة ${rep.created + rep.updated} موظف، لكن تعذّر حفظها على هذا الجهاز.</p>`;
+    out.innerHTML = head +
       (rep.cleaned ? `<p class="warn">تم تنظيف ${rep.cleaned} سطر (أحرف تحكم أو أطوال تجاوزت الحد).</p>` : "") +
       (rep.skipped.length
         ? `<p class="warn">تم تجاهل ${rep.skipped.length} سطر:</p><ul>${rep.skipped
@@ -42,6 +43,6 @@ export function mount(A) {
         : "");
     if (rep.skipped.length > 20)
       out.innerHTML += `<p><small>و${rep.skipped.length - 20} سطر آخر…</small></p>`;
-    if (rep.created + rep.updated > 0) await alertBox(`<p class="ok">تم استيراد البيانات بنجاح.</p>`);
+    if (ok && rep.created + rep.updated > 0) await alertBox(`<p class="ok">تم استيراد البيانات بنجاح.</p>`);
   };
 }

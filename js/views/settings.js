@@ -112,7 +112,7 @@ export function mount(A) {
     if (a === "savelabels") {
       for (const f of FIELDS) S.labels[f[0]] = $("#lab_" + f[0]).value.trim() || f[1];
       S.labels.fam = $("#lab_fam").value.trim() || FAM_LABEL;
-      await A.saveS();
+      if (!(await A.saveS())) return;
       return alertBox(`<p class="ok">تم حفظ التسميات.</p>`);
     }
 
@@ -145,7 +145,7 @@ export function mount(A) {
         t.noDate = $("#nd_" + t.tid).checked;
         t.bad = $("#bd_" + t.tid).checked;
       }
-      await A.saveS();
+      if (!(await A.saveS())) return;
       return alertBox(`<p class="ok">تم حفظ أنواع الرخص.</p>`);
     }
 
@@ -258,9 +258,9 @@ async function changePin(A) {
     if (n1.length < 4) return err("الرمز الجديد قصير (4 أرقام على الأقل)");
     if (n1 !== n2) return err("الرمزان غير متطابقين");
     A.S.pin = await makePin(n1);
-    await A.saveS();
+    const ok = await A.saveS();
     m.remove();
-    await alertBox(`<p class="ok">تم تغيير رمز القفل.</p>`);
+    if (ok) await alertBox(`<p class="ok">تم تغيير رمز القفل.</p>`);
   });
   document.body.appendChild(m);
   m.querySelector("#oldpin").focus();
