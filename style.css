@@ -38,6 +38,11 @@ hr{border:none;border-top:1px solid var(--line);margin:14px 0}
 .chk{display:flex;gap:8px;align-items:center;margin-top:8px;color:var(--dim)}
 .chk input[type=checkbox]{width:22px;height:22px;min-height:0;flex:none;accent-color:var(--fg)}
 .chk input[type=text],.chk input[type=number],.chk input[type=password]{width:auto;flex:1;min-width:110px}
+/* CSP: no inline style attributes anywhere — utility classes instead */
+.chk input.w90{width:90px;flex:none;min-width:70px}
+.grow{flex:1}
+.tight{margin:0}
+.who .goto{cursor:pointer}
 
 /* dashboard */
 .stat{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:8px;margin:8px 0}

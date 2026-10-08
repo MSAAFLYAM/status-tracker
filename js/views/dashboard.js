@@ -32,7 +32,7 @@ export function html(A) {
         .map(({ e, p }) => {
           const rd = returnDate(p);
           const right = p.nd ? "بدون تاريخ" : rd ? "العودة: " + rd : "مدة غير محددة";
-          return `<div class="who"><span data-goto="${esc(e.id)}" style="cursor:pointer">${esc(
+          return `<div class="who"><span class="goto" data-goto="${esc(e.id)}">${esc(
             e.prenom + " " + e.nom
           )} <small>${esc(e.mat)}</small></span><span>${esc(right)}</span></div>`;
         })
@@ -50,7 +50,7 @@ export function html(A) {
     ? due
         .map(
           ({ e, p, back }) =>
-            `<div class="who"><span data-goto="${esc(e.id)}" style="cursor:pointer">${esc(
+            `<div class="who"><span class="goto" data-goto="${esc(e.id)}">${esc(
               e.prenom + " " + e.nom
             )} <small>${esc(e.mat)}</small></span><span>${esc(back === t ? "يعود اليوم" : back)} — ${esc(
               typeName(types, p)

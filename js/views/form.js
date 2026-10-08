@@ -21,7 +21,7 @@ export function html(A) {
     <label>الصورة (تُصغَّر تلقائيًا إلى 240px)</label>
     <input id="f_img" type="file" accept="image/*">
     <p id="err" class="bad" role="alert"></p>
-    <button data-a="save" data-id="${e ? e.id : ""}" type="button">حفظ</button>
+    <button data-a="save" data-id="${esc(e ? e.id : "")}" type="button">حفظ</button>
     <button data-a="home" type="button">إلغاء</button>`;
 }
 

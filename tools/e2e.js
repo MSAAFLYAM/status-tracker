@@ -208,7 +208,20 @@ async function staticChecks() {
   }
   const indexHtml = await (await fetch(BASE + "index.html")).text();
   assert(indexHtml.includes('lang="ar"') && indexHtml.includes('dir="rtl"'), "index.html is Arabic RTL");
-  assert(!/security|gouv|maroc|minist/i.test(indexHtml), "index.html has no institution name");
+  /* the CSP meta tag contains the word "Security"; scan the rest of the file */
+  const indexScan = indexHtml.replace(/<meta[^>]*content-security-policy[^>]*>/gi, "");
+  assert(!/security|gouv|maroc|minist/i.test(indexScan), "index.html has no institution name");
+
+  /* security: Content-Security-Policy */
+  const cspMeta = indexHtml.match(/<meta http-equiv="Content-Security-Policy" content="([^"]+)"/i);
+  assert(!!cspMeta, "index.html ships a Content-Security-Policy meta tag");
+  const csp = cspMeta ? cspMeta[1] : "";
+  assert(/object-src 'none'/.test(csp) && /base-uri 'none'/.test(csp), "CSP: object-src 'none' + base-uri 'none'");
+  assert(!/unsafe-inline|unsafe-eval/.test(csp), "CSP contains no unsafe-inline / unsafe-eval anywhere");
+  assert(/script-src 'self'/.test(csp) && /style-src 'self'/.test(csp), "CSP: script-src and style-src are 'self' only");
+  assert(/img-src[^;]*data:/.test(csp), "CSP allows data: images (photos) and nothing remote");
+  assert(!/<script(?![^>]*\bsrc=)/i.test(indexHtml), "index.html has no inline <script> block");
+  assert(!/\son[a-z]+\s*=\s*["']/i.test(indexHtml), "index.html has no inline event-handler attribute");
 }
 
 async function main() {
@@ -392,6 +405,20 @@ async function main() {
     "font-size toggle enlarges the text"
   );
 
+  /* CSP hygiene: rendered views must never contain inline styles or handlers */
+  console.log("\n[security] rendered markup: no inline styles, no inline handlers");
+  for (const tab of ["لوحة", "إعدادات", "استيراد CSV", "بحث"]) {
+    await clickText(page, "#nav button", tab);
+    const h = await page.evaluate(() => ({
+      styles: document.querySelectorAll("#app [style]").length,
+      handlers: [...document.querySelectorAll("#app *")].filter((el) =>
+        [...el.attributes].some((a) => /^on/i.test(a.name))
+      ).length,
+    }));
+    assert(h.styles === 0, `${tab}: no inline style attributes (CSP style-src 'self')`);
+    assert(h.handlers === 0, `${tab}: no inline event-handler attributes`);
+  }
+
   /* 5. export -> wipe -> restore */
   console.log("\n[backup] acceptance test 5");
   await clickText(page, "#nav button", "إعدادات");
@@ -434,6 +461,62 @@ async function main() {
   await openEmployee(page, "FAKE-0001");
   await page.waitForSelector("#app img.ph", { timeout: 5000 });
   assert(true, "photo came back after restore");
+
+  /* security regression: the crafted backup from the audit must be neutralized */
+  console.log("\n[security] crafted backup (XSS payload in photo/name) is neutralized");
+  const legitBak = JSON.parse(fs.readFileSync(bak, "utf8"));
+  const evilBak = {
+    ...legitBak,
+    employees: legitBak.employees.concat([
+      {
+        id: "evil1",
+        mat: "EVIL-1",
+        nom: '<img src=x onerror="window.__xss=1">',
+        prenom: 'اختبار"><script>window.__xss=1</script>',
+        grade: 'ت"; alert(1); "',
+        addr: '"; window.__xss=1; "',
+        periods: [],
+        photo: 'x" onerror="window.__xss=1',
+      },
+    ]),
+  };
+  const evilPath = path.join(DL, "evil-backup.json");
+  fs.writeFileSync(evilPath, JSON.stringify(evilBak), "utf8");
+  await clickText(page, "#nav button", "إعدادات");
+  await (await page.$("#rfile")).uploadFile(evilPath);
+  await clickText(page, "#app [data-a='restore']", "استرجاع");
+  await clickText(page, ".modal button", "استبدال واسترجاع");
+  await sleep(500);
+  const hygiene = await page.evaluate(() => ({
+    fired: !!window.__xss,
+    onerrorImgs: document.querySelectorAll("[onerror]").length,
+    scripts: document.querySelectorAll("#app script").length,
+    handlerAttrs: [...document.querySelectorAll("#app *")].filter((el) =>
+      [...el.attributes].some((a) => /^on/i.test(a.name))
+    ).length,
+  }));
+  assert(!hygiene.fired, "no XSS payload executed on restore or render");
+  assert(hygiene.onerrorImgs === 0, "the crafted photo never lands as an <img onerror> element");
+  assert(hygiene.scripts === 0, "no <script> element injected");
+  assert(hygiene.handlerAttrs === 0, "no inline handler attribute anywhere in the app");
+  await openEmployee(page, "EVIL-1");
+  assert(await hasTxt(page, "onerror"), "the hostile name is displayed as plain text, not markup");
+  assert(
+    (await page.evaluate(() => document.querySelectorAll("#app img.ph").length)) === 0,
+    "the invalid photo was dropped and replaced by the placeholder"
+  );
+  await page.evaluate(() => delete window.__xss);
+
+  /* back to the legitimate data set */
+  await clickText(page, "#nav button", "إعدادات");
+  await (await page.$("#rfile")).uploadFile(bak);
+  await clickText(page, "#app [data-a='restore']", "استرجاع");
+  await clickText(page, ".modal button", "استبدال واسترجاع");
+  await page.waitForFunction(() => /13 \/ 13 موظف/.test(document.getElementById("app").innerText), { timeout: 8000 });
+  assert(true, "legitimate backup restored again after the attack test");
+  await openEmployee(page, "FAKE-0001");
+  await page.waitForSelector("#app img.ph", { timeout: 5000 });
+  assert(true, "photo still intact after the attack test");
 
   /* 1. airplane mode: kill the server and reload */
   console.log("\n[offline] acceptance test 1 — server killed (airplane mode)");

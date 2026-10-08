@@ -18,12 +18,14 @@ export function html(A) {
 
   const types = S.types
     .map(
-      (t) => `<div class="card"><div style="flex:1">
-        <input id="nm_${t.tid}" type="text" value="${esc(t.name)}" aria-label="اسم النوع">
-        <div class="chk"><input id="dd_${t.tid}" type="number" min="0" value="${t.days}" style="width:90px" aria-label="المدة الافتراضية"><span>مدة افتراضية (أيام)</span></div>
-        <div class="chk"><input id="nd_${t.tid}" type="checkbox" ${t.noDate ? "checked" : ""}><span>بدون تاريخ ومدة (يبقى حتى الحذف)</span></div>
-        <div class="chk"><input id="bd_${t.tid}" type="checkbox" ${t.bad ? "checked" : ""}><span>حالة سالبة (تظهر بالأحمر)</span></div>
-      </div><button data-a="delty" data-t="${t.tid}" type="button">حذف</button></div>`
+      (t) => `<div class="card"><div class="grow">
+        <input id="nm_${esc(t.tid)}" type="text" value="${esc(t.name)}" aria-label="اسم النوع">
+        <div class="chk"><input id="dd_${esc(t.tid)}" class="w90" type="number" min="0" value="${esc(
+        String(+t.days || 0)
+      )}" aria-label="المدة الافتراضية"><span>مدة افتراضية (أيام)</span></div>
+        <div class="chk"><input id="nd_${esc(t.tid)}" type="checkbox" ${t.noDate ? "checked" : ""}><span>بدون تاريخ ومدة (يبقى حتى الحذف)</span></div>
+        <div class="chk"><input id="bd_${esc(t.tid)}" type="checkbox" ${t.bad ? "checked" : ""}><span>حالة سالبة (تظهر بالأحمر)</span></div>
+      </div><button data-a="delty" data-t="${esc(t.tid)}" type="button">حذف</button></div>`
     )
     .join("");
 
@@ -45,9 +47,9 @@ ${labels}
 <h3>أنواع الرخص والوضعيات</h3>
 <p><small>يمكنك تغيير الأسماء، المدد، وإضافة أنواع جديدة. الأسماء القديمة في السجلات تُحدَّث تلقائيًا.</small></p>
 ${types}
-<div class="card"><div style="flex:1">
+<div class="card"><div class="grow">
   <input id="newty" type="text" placeholder="اسم النوع الجديد" aria-label="اسم النوع الجديد">
-  <div class="chk"><input id="newdd" type="number" min="0" value="1" style="width:90px"><span>مدة افتراضية (أيام)</span></div>
+  <div class="chk"><input id="newdd" class="w90" type="number" min="0" value="1"><span>مدة افتراضية (أيام)</span></div>
 </div><button data-a="addty" type="button">إضافة</button></div>
 <div><button data-a="savetypes" type="button">حفظ الأنواع</button></div>
 

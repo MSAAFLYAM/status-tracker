@@ -21,6 +21,12 @@ export const nz = (s) =>
 
 export const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
 
+/** الصور مقبولة فقط كـ data URL صالح (jpeg/png/webp) وبمقاس معقول.
+ *  أي محتوى آخر (payload معدّل أو ملف غير صورة) يُرفض ولا يُعرض أبدًا. */
+const PHOTO_RE = /^data:image\/(?:jpeg|png|webp);base64,[A-Za-z0-9+/]+={0,2}$/;
+export const safePhoto = (v) =>
+  typeof v === "string" && v.length <= 600000 && PHOTO_RE.test(v) ? v : "";
+
 export const today = () => new Date(Date.now() - new Date().getTimezoneOffset() * 6e4).toISOString().slice(0, 10);
 
 export const add = (s, n) => {

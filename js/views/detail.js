@@ -51,19 +51,19 @@ export function html(A) {
           const range = p.nd
             ? "بدون تاريخ أو مدة (إلى حين التعديل)"
             : "من " + p.start + (endOf(p) ? " إلى " + endOf(p) : " (غير محددة)");
-          return `<div class="card"><div>${esc(name)}<br>${range}${back ? "<br>العودة: " + back : ""}</div>
+          return `<div class="card"><div>${esc(name)}<br>${esc(range)}${back ? "<br>العودة: " + esc(back) : ""}</div>
             <button data-a="editp" data-p="${esc(p.pid)}" type="button">تعديل</button>
             <button data-a="rmp" data-p="${esc(p.pid)}" type="button">حذف</button></div>`;
         })
         .join("")
     : "<p>لا توجد رخص مسجلة.</p>";
 
-  return `<div class="card">${ph(e)}<div><h2 style="margin:0">${esc(e.prenom)} ${esc(e.nom)}</h2>${badge(e, types)}${
-    rd ? `<br>يعود إلى العمل: ${rd}` : ""
+  return `<div class="card">${ph(e)}<div><h2 class="tight">${esc(e.prenom)} ${esc(e.nom)}</h2>${badge(e, types)}${
+    rd ? `<br>يعود إلى العمل: ${esc(rd)}` : ""
   }</div></div>
   <p>${FIELDS.map((f) => esc(L(f[0])) + ": " + (esc(e[f[0]]) || "—")).join("<br>")}<br>${esc(
     A.S.labels.fam || FAM_LABEL
-  )}: ${esc(e.fam) || "—"}${e.joined ? "<br>الأقدمية: " + tenure(e.joined) : ""}</p>
+  )}: ${esc(e.fam) || "—"}${e.joined ? "<br>الأقدمية: " + esc(tenure(e.joined)) : ""}</p>
   <button data-a="edit" type="button">تعديل</button>
   <button data-a="del" type="button">حذف الموظف</button>
   <button data-a="home" type="button">رجوع</button>

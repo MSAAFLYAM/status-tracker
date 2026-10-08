@@ -1,11 +1,14 @@
 /* Home = search (behaviour kept from prototype.html). */
 
-import { esc, $ } from "../util.js";
+import { esc, $, safePhoto } from "../util.js";
 import { find } from "../search.js";
 import { badge } from "../status.js";
 
-export const ph = (e) =>
-  e.photo ? `<img class="ph" src="${e.photo}" alt="">` : `<div class="ph">👤</div>`;
+/** الصورة تُعرض فقط إذا كانت data URL صالحًا، وكل قيمة أخرى تمر عبر esc(). */
+export const ph = (e) => {
+  const src = safePhoto(e && e.photo);
+  return src ? `<img class="ph" src="${esc(src)}" alt="">` : `<div class="ph" aria-hidden="true">👤</div>`;
+};
 
 export const card = (e, types) =>
   `<div class="card" data-id="${esc(e.id)}">${ph(e)}<div><b>${esc(e.prenom)} ${esc(e.nom)}</b><br>${esc(

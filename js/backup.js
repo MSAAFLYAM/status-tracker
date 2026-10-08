@@ -2,7 +2,7 @@
  * optionally encrypted with a password (PBKDF2-SHA256 + AES-GCM).
  * Nothing is ever uploaded — the file is downloaded to the device only. */
 
-import { b64ToBytes, bytesToB64, today } from "./util.js";
+import { b64ToBytes, bytesToB64, today, safePhoto } from "./util.js";
 import { BACKUP_REMIND_DAYS } from "./config.js";
 
 const KIND = "emp-backup";
@@ -79,7 +79,16 @@ export async function importBackup(file, password) {
     }
   }
   if (!obj || obj.kind !== KIND || !Array.isArray(obj.employees)) throw new Error("محتوى النسخة غير صالح");
-  return obj.employees;
+  /* Drop any photo that is not a valid data:image URL: a crafted backup can
+   * otherwise smuggle markup into <img src="…">. */
+  return obj.employees.map((e) => {
+    if (e && typeof e === "object" && e.photo && !safePhoto(e.photo)) {
+      const c = { ...e };
+      delete c.photo;
+      return c;
+    }
+    return e;
+  });
 }
 
 /** true if we should remind the user to make a backup (never / > 30 days ago). */
