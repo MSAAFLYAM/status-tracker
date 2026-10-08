@@ -19,14 +19,23 @@ export function html(A) {
 
   const types = S.types
     .map(
-      (t) => `<div class="card"><div class="grow">
+      (t) => `<div class="card wrap"><div class="grow">
         <input id="nm_${esc(t.tid)}" type="text" value="${esc(t.name)}" aria-label="اسم النوع">
         <div class="chk"><input id="dd_${esc(t.tid)}" class="w90" type="number" min="0" value="${esc(
         String(+t.days || 0)
       )}" aria-label="المدة الافتراضية"><span>مدة افتراضية (أيام)</span></div>
         <div class="chk"><input id="nd_${esc(t.tid)}" type="checkbox" ${t.noDate ? "checked" : ""}><span>بدون تاريخ ومدة (يبقى حتى الحذف)</span></div>
         <div class="chk"><input id="bd_${esc(t.tid)}" type="checkbox" ${t.bad ? "checked" : ""}><span>حالة سالبة (تظهر بالأحمر)</span></div>
-      </div><button data-a="delty" data-t="${esc(t.tid)}" type="button">حذف</button></div>`
+        ${
+          t.archived
+            ? `<p><small class="warn">مؤرشف — مخفي من قوائم الإضافة الجديدة، ويبقى في السجلات القديمة.</small></p>`
+            : ""
+        }
+      </div>${
+        t.archived
+          ? `<button data-a="unarch" data-t="${esc(t.tid)}" type="button">إلغاء الأرشفة</button>`
+          : ""
+      }<button data-a="delty" data-t="${esc(t.tid)}" type="button">حذف</button></div>`
     )
     .join("");
 
@@ -46,7 +55,7 @@ ${labels}
 <div><button data-a="savelabels" type="button">حفظ التسميات</button></div>
 
 <h3>أنواع الرخص والوضعيات</h3>
-<p><small>يمكنك تغيير الأسماء، المدد، وإضافة أنواع جديدة. الأسماء القديمة في السجلات تُحدَّث تلقائيًا.</small></p>
+<p><small>يمكنك تغيير الأسماء، المدد، وإضافة أنواع جديدة. الأسماء القديمة في السجلات تُحدَّث تلقائيًا. النوع المستعمل في سجلات لا يُحذف: تُؤرشف بدل ذلك (يختفي من الإضافة الجديدة ويبقى في السجلات).</small></p>
 ${types}
 <div class="card"><div class="grow">
   <input id="newty" type="text" placeholder="اسم النوع الجديد" aria-label="اسم النوع الجديد">
@@ -125,16 +134,44 @@ export function mount(A) {
     }
 
     if (a === "delty") {
+      const t = S.types.find((x) => x.tid === b.dataset.t);
+      if (!t) return;
       if (S.types.length <= 1) return alertBox(`<p class="bad">يجب إبقاء نوع واحد على الأقل.</p>`);
+      /* نوع في الاستعمال لا يُحذف أبدًا: الحذف يطمس بيانات الغياب من اللوحة.
+       * نعرض الأرشفة بدل الحذف (M3). */
+      const used = A.D.reduce(
+        (n, e) => n + (Array.isArray(e.periods) ? e.periods.filter((p) => p && p.tid === t.tid).length : 0),
+        0
+      );
+      if (used > 0) {
+        const ok = await confirmBox({
+          title: "النوع في الاستعمال",
+          body: `<p>هذا النوع مستعمل في <b>${used}</b> سجل، ولا يمكن حذفه: ستختفي بيانات الغياب من لوحة الوضعية.</p>
+            <p>الأرشفة تُخفيه من قوائم الإضافة الجديدة فقط، وتبقى السجلات القديمة وتظهر باسمها كما هي.</p>`,
+          ok: "أرشفة",
+        });
+        if (!ok) return;
+        t.archived = true;
+        if (!(await A.saveS())) return;
+        return A.render();
+      }
       const ok = await confirmBox({
         title: "حذف النوع",
-        body: "<p>سيختفي من قائمة الإضافة، لكن السجلات القديمة تبقى كما هي.</p>",
+        body: "<p>لا يستعمله أي سجل حاليًا. سيختفي من قائمة الإضافة، لكن السجلات القديمة تبقى كما هي.</p>",
         ok: "حذف",
         danger: true,
       });
       if (!ok) return;
-      S.types = S.types.filter((t) => t.tid !== b.dataset.t);
-      await A.saveS();
+      S.types = S.types.filter((x) => x.tid !== b.dataset.t);
+      if (!(await A.saveS())) return;
+      return A.render();
+    }
+
+    if (a === "unarch") {
+      const t = S.types.find((x) => x.tid === b.dataset.t);
+      if (!t) return;
+      delete t.archived;
+      if (!(await A.saveS())) return;
       return A.render();
     }
 

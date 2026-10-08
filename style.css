@@ -21,6 +21,7 @@ button:active{background:var(--fg);color:#000}
 .row>*{flex:1}
 .row>button{flex:none}
 .card{border:1px solid var(--line);border-radius:10px;padding:8px;margin:8px 0;display:flex;gap:10px;align-items:center}
+.card.wrap{flex-wrap:wrap}
 .card[data-id]{cursor:pointer}
 .card[data-id]:hover{border-color:var(--fg)}
 .ph{width:56px;height:56px;border-radius:50%;border:1px solid var(--fg);object-fit:cover;flex:none;display:flex;align-items:center;justify-content:center}

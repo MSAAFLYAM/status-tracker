@@ -16,7 +16,10 @@ export function html(A) {
   const ps = [...(e.periods || [])].sort((a, b) => (b.start || "").localeCompare(a.start || ""));
   const editing = A.V.editPid ? (e.periods || []).find((p) => p.pid === A.V.editPid) : null;
 
-  const sel = `<select id="pt">${types
+  /* الأنواع المؤرشفة مخفية من الإضافة الجديدة، لكنها تبقى معروضة عند
+   * تعديل سجل قديم حتى لا يُغيَّر نوعه بالخطأ (M3). */
+  const opts = types.filter((t) => !t.archived || (editing && editing.tid === t.tid));
+  const sel = `<select id="pt">${opts
     .map(
       (t) =>
         `<option value="${esc(t.tid)}" data-o="${t.noDate ? 1 : ""}" ${
@@ -25,7 +28,7 @@ export function html(A) {
     )
     .join("")}</select>`;
 
-  const selT = editing ? types.find((t) => t.tid === editing.tid) : types[0];
+  const selT = editing ? types.find((t) => t.tid === editing.tid) : opts[0];
   const noDate = !!(selT && selT.noDate);
 
   const periodForm = `<h3>${editing ? "تعديل رخصة / وضعية" : "إضافة رخصة / وضعية"}</h3>
@@ -47,7 +50,7 @@ export function html(A) {
   const list = ps.length
     ? ps
         .map((p) => {
-          const name = typeName(types, p);
+          const name = typeName(types, p) || "نوع محذوف";
           const back = returnDate(p);
           const range = p.nd
             ? "بدون تاريخ أو مدة (إلى حين التعديل)"
@@ -114,7 +117,11 @@ export function mount(A) {
 
     if (a === "addp") {
       const opt = $("#pt").selectedOptions[0];
-      const t = A.S.types.find((x) => x.tid === opt.value);
+      const t = opt && A.S.types.find((x) => x.tid === opt.value);
+      if (!t) {
+        $("#perr").textContent = "لا يوجد نوع متاح: ألغِ أرشفة نوع من الإعدادات";
+        return;
+      }
       const nd = !!(t && t.noDate);
       const s = $("#ps").value;
       const d = $("#pd").value;

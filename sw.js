@@ -6,7 +6,7 @@
  * Bump VERSION whenever a file changes.
  */
 
-const VERSION = "v1.1.4";
+const VERSION = "v1.1.5";
 const CACHE = "emp-cache-" + VERSION;
 
 const ASSETS = [

@@ -12,22 +12,35 @@ export function html(A) {
   const away = rows.filter((x) => x.p);
   const working = rows.length - away.length;
 
+  /* اجمع الغائبين حسب النوع: المفتاح = tid إن كان النوع موجودًا، وإلا الاسم
+   * المحفوظ في السجل نفسه — لا يختفي أحد عند حذف أو أرشفة نوع، والاسم
+   * القديم يظل معروضًا (M3). */
+  const keyOf = (p) => (p.tid && types.some((x) => x.tid === p.tid) ? p.tid : "s:" + (p.type || ""));
+  const meta = new Map();
+  for (const { p } of away) {
+    const k = keyOf(p);
+    if (!meta.has(k)) meta.set(k, { label: typeName(types, p) || "نوع محذوف", bad: isBad(types, p), n: 0 });
+    meta.get(k).n++;
+  }
+  const order = [
+    ...types.filter((t) => meta.has(t.tid)).map((t) => t.tid),
+    ...[...meta.keys()].filter((k) => !types.some((t) => t.tid === k)),
+  ];
+
   /* counts per status */
-  const counts = new Map();
-  counts.set("__work", working);
-  for (const { p } of away) counts.set(p.tid || p.type, (counts.get(p.tid || p.type) || 0) + 1);
   const stats = [`<div><b>${A.D.length}</b>العدد الإجمالي</div>`, `<div class="ok"><b>${working}</b>${WORKING}</div>`];
-  for (const ty of types) {
-    const n = counts.get(ty.tid) || 0;
-    if (n) stats.push(`<div class="${ty.bad ? "bad" : "warn"}"><b>${n}</b>${esc(ty.name)}</div>`);
+  for (const k of order) {
+    const m = meta.get(k);
+    stats.push(`<div class="${m.bad ? "bad" : "warn"}"><b>${m.n}</b>${esc(m.label)}</div>`);
   }
 
   /* away grouped by type */
   let groups = "";
-  for (const ty of types) {
-    const list = away.filter((x) => (x.p.tid || x.p.type) === ty.tid).sort((a, b) => (returnDate(a.p) || "9999").localeCompare(returnDate(b.p) || "9999"));
+  for (const k of order) {
+    const m = meta.get(k);
+    const list = away.filter((x) => keyOf(x.p) === k).sort((a, b) => (returnDate(a.p) || "9999").localeCompare(returnDate(b.p) || "9999"));
     if (!list.length) continue;
-    groups += `<div class="grp"><h3 class="${ty.bad ? "bad" : "warn"}">${esc(ty.name)} — ${list.length}</h3>` +
+    groups += `<div class="grp"><h3 class="${m.bad ? "bad" : "warn"}">${esc(m.label)} — ${list.length}</h3>` +
       list
         .map(({ e, p }) => {
           const rd = returnDate(p);
@@ -66,7 +79,12 @@ export function html(A) {
     <p><small>محسوبة من تاريخ اليوم ${t} — لا تُخزَّن الوضعية.</small></p>
     <div class="stat">${stats.join("")}</div>
     <h3>الغيابون حسب النوع</h3>
-    ${groups || `<p class="ok">لا يوجد أي غائب اليوم: الجميع يعمل.</p>`}
+    ${
+      groups ||
+      (away.length
+        ? `<p class="warn">يوجد ${away.length} غائب اليوم، لكن تعذّر تجميعهم حسب النوع.</p>`
+        : `<p class="ok">لا يوجد أي غائب اليوم: الجميع يعمل.</p>`)
+    }
     <h3>يعودون خلال 7 أيام</h3>
     <div class="grp">${dueList}</div>`;
 }

@@ -697,6 +697,78 @@ async function main() {
   });
   assert(true, "the app boots normally after the database recovers");
 
+  /* ---------------- M3: types in use cannot be deleted ---------------- */
+  console.log("\n[types] deleting a type in use offers archive instead");
+
+  /* (a) t01 is used by FAKE-0002 and FAKE-0004 periods */
+  await clickText(page, "#nav button", "إعدادات");
+  await clickText(page, "#app [data-a='delty'][data-t='t01']", "حذف");
+  await page.waitForFunction(() => document.body.innerText.includes("النوع في الاستعمال"), { timeout: 8000 });
+  assert(true, "deleting a type in use is refused with an explanation");
+  assert(await hasTxt(page, "الأرشفة", "body"), "an archive is offered instead of deletion");
+  await clickText(page, ".modal button", "أرشفة");
+  await page.waitForFunction(() => document.getElementById("app").innerText.includes("مؤرشف"), { timeout: 8000 });
+  assert(true, "the type card is marked as archived");
+  assert(!!(await page.$("#app [data-a='unarch'][data-t='t01']")), "an unarchive button appears");
+
+  /* (b) archived: hidden for new entries, kept on old periods */
+  await clickText(page, "#nav button", "بحث");
+  await openEmployee(page, "FAKE-0004");
+  assert(await hasTxt(page, "عطلة إدارية (معدلة)"), "old periods still show the archived type name");
+  const opts = await page.$eval("#pt", (s) => [...s.options].map((o) => o.value));
+  assert(!opts.includes("t01"), "archived type is hidden from the new-entry select");
+  assert(opts.includes("t11"), "other types stay selectable");
+  await click(page, "[data-a='editp']", 0);
+  await sleep(150);
+  assert(
+    (await page.$eval("#pt", (s) => s.value)) === "t01",
+    "editing the old period keeps its archived type selected"
+  );
+
+  /* (c) unarchive brings it back */
+  await clickText(page, "#nav button", "إعدادات");
+  await clickText(page, "#app [data-a='unarch'][data-t='t01']", "إلغاء الأرشفة");
+  assert(!(await hasTxt(page, "مؤرشف")), "the type comes back from the archive");
+
+  /* ---------------- M3: dashboard falls back to the stored name ---------- */
+  console.log("\n[dashboard] orphan type falls back to the stored name");
+  const orphanBak = {
+    ...legitBak,
+    employees: legitBak.employees.concat([
+      {
+        id: "orph1",
+        mat: "ORPH-1",
+        nom: "غائب",
+        prenom: "بلا",
+        periods: [{ pid: "po", tid: "zzz99", type: "مخصوصة غير موجودة", start: todayStr(), days: 5, nd: false }],
+      },
+    ]),
+  };
+  const orphanPath = path.join(DL, "orphan-backup.json");
+  fs.writeFileSync(orphanPath, JSON.stringify(orphanBak), "utf8");
+  await (await page.$("#rfile")).uploadFile(orphanPath);
+  await clickText(page, "#app [data-a='restore']", "استرجاع");
+  await clickText(page, ".modal button", "استبدال واسترجاع");
+  await page.waitForFunction(() => /14 \/ 14 موظف/.test(document.getElementById("app").innerText), { timeout: 8000 });
+  assert(true, "orphan-period backup restored (14/14)");
+  await clickText(page, "#nav button", "لوحة");
+  assert(await hasTxt(page, "مخصوصة غير موجودة — 1"), "dashboard falls back to the stored type name");
+  assert(
+    !(await page.evaluate(() => document.getElementById("app").innerText.includes("الجميع يعمل"))),
+    "never claims everyone is working while someone is absent"
+  );
+  assert(await hasTxt(page, "ORPH-1"), "the absent employee is listed under the orphan group");
+
+  /* back to the legitimate data set for the offline test */
+  await clickText(page, "#nav button", "إعدادات");
+  await (await page.$("#rfile")).uploadFile(bak);
+  await clickText(page, "#app [data-a='restore']", "استرجاع");
+  await clickText(page, ".modal button", "استبدال واسترجاع");
+  await page.waitForFunction(() => /13 \/ 13 موظف/.test(document.getElementById("app").innerText), {
+    timeout: 8000,
+  });
+  assert(true, "13/13 restored before the offline test (final)");
+
   /* 1. airplane mode: kill the server and reload */
   console.log("\n[offline] acceptance test 1 — server killed (airplane mode)");
   server.kill();
