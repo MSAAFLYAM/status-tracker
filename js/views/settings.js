@@ -1,7 +1,7 @@
 /* Settings: field labels (rename on device only), leave types, PIN,
  * backup / restore / CSV export, wipe, font size. */
 
-import { $, esc, uid, confirmBox, alertBox } from "../util.js";
+import { $, esc, uid, confirmBox, alertBox, closeModal } from "../util.js";
 import { FIELDS, FAM_LABEL } from "../config.js";
 import { LIMITS } from "../validate.js";
 import { makePin, checkPin } from "../pin.js";
@@ -286,7 +286,7 @@ async function changePin(A) {
   m.addEventListener("click", async (ev) => {
     const b = ev.target.closest("button[data-x]");
     if (!b) return;
-    if (b.dataset.x === "0") return m.remove();
+    if (b.dataset.x === "0") return closeModal();
     const err = (t) => (m.querySelector("#pinerr").textContent = t);
     const old = m.querySelector("#oldpin").value;
     const n1 = m.querySelector("#newpin").value;
@@ -296,7 +296,7 @@ async function changePin(A) {
     if (n1 !== n2) return err("الرمزان غير متطابقين");
     A.S.pin = await makePin(n1);
     const ok = await A.saveS();
-    m.remove();
+    closeModal();
     if (ok) await alertBox(`<p class="ok">تم تغيير رمز القفل.</p>`);
   });
   document.body.appendChild(m);

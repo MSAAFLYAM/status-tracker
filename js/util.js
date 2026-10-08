@@ -71,6 +71,55 @@ export function download(blob, name) {
 export const bytesToB64 = (buf) => btoa(String.fromCharCode(...new Uint8Array(buf)));
 export const b64ToBytes = (s) => Uint8Array.from(atob(s), (c) => c.charCodeAt(0));
 
+/* ------------------------------------------------------------- modals ------
+ * Every modal pushes a history entry, so the browser Back closes the modal
+ * first and only then moves between screens; Escape does the same (M1). */
+let backPending = false; // our history.back() for a modal close has not landed yet
+let afterBackQ = [];
+
+/** Run fn now, or right after a pending modal back() has landed. */
+export function afterBack(fn) {
+  if (backPending) afterBackQ.push(fn);
+  else fn();
+}
+
+/** app.js popstate calls this first: true when the pop only settles our own
+ *  modal back(); runs anything queued behind it. */
+export function settleBack() {
+  if (!backPending) return false;
+  backPending = false;
+  const q = afterBackQ;
+  afterBackQ = [];
+  q.forEach((f) => f());
+  return true;
+}
+
+const pushModalEntry = () =>
+  afterBack(() => {
+    try {
+      history.pushState({ ...(history.state || {}), modal: 1 }, "");
+    } catch (e) {
+      /* file:// or quota — the modal still works, Back just won't close it */
+    }
+  });
+
+const releaseModalEntry = () => {
+  if (!(history.state && history.state.modal)) return;
+  backPending = true;
+  history.back();
+};
+
+/** Close the topmost modal (and its history entry).
+ *  fromHistory = the browser Back already moved past that entry. */
+export function closeModal(fromHistory) {
+  const m = [...document.querySelectorAll(".modal")].pop();
+  if (!m) return false;
+  m.remove();
+  if (typeof m.__onClose === "function") m.__onClose();
+  if (!fromHistory) releaseModalEntry();
+  return true;
+}
+
 export function confirmBox({ title, body, ok = "تأكيد", cancel = "إلغاء", danger = false }) {
   return new Promise((resolve) => {
     const m = document.createElement("div");
@@ -78,13 +127,16 @@ export function confirmBox({ title, body, ok = "تأكيد", cancel = "إلغا�
     m.innerHTML = `<div class="box"><h2>${esc(title)}</h2><div>${body || ""}</div>
       <div class="btns"><button type="button" data-x="0">${esc(cancel)}</button>
       <button type="button" data-x="1" class="${danger ? "bad" : ""}">${esc(ok)}</button></div></div>`;
+    m.__onClose = () => resolve(false); // closed by Back / Escape: treat as cancel
     m.addEventListener("click", (e) => {
       const b = e.target.closest("button[data-x]");
       if (!b) return;
       m.remove();
+      releaseModalEntry();
       resolve(b.dataset.x === "1");
     });
     document.body.appendChild(m);
+    pushModalEntry();
     m.querySelector("[data-x='1']").focus();
   });
 }
@@ -94,13 +146,16 @@ export function alertBox(html) {
     const m = document.createElement("div");
     m.className = "modal";
     m.innerHTML = `<div class="box">${html}<div class="btns"><button type="button">حسنًا</button></div></div>`;
+    m.__onClose = () => resolve();
     m.addEventListener("click", (e) => {
       if (e.target.closest("button")) {
         m.remove();
+        releaseModalEntry();
         resolve();
       }
     });
     document.body.appendChild(m);
+    pushModalEntry();
     m.querySelector("button").focus();
   });
 }

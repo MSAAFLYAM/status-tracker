@@ -813,6 +813,53 @@ async function main() {
   await unlock(page);
   assert(await hasTxt(page, "موظف", "#app"), "the app is usable after relocking");
 
+  /* ---------------- M1: History API navigation ---------------- */
+  console.log("\n[navigation] Back navigates screens and closes modals (M1)");
+  await page.evaluate(() => {
+    window.__navMarker = 1;
+  });
+
+  /* (a) home -> detail -> Back => home, same document (no app exit) */
+  await openEmployee(page, "FAKE-0001");
+  assert(await page.evaluate(() => !!document.querySelector("#app [data-a='addp']")), "detail screen open");
+  await page.evaluate(() => history.back());
+  await page.waitForFunction(() => !!document.querySelector("#app #q"), { timeout: 5000 });
+  assert(true, "Back from detail returns to the home screen");
+  assert(await page.evaluate(() => window.__navMarker === 1), "the document was not reloaded or exited");
+
+  /* (b) home -> settings -> Back => home */
+  await clickText(page, "#nav button", "إعدادات");
+  assert(await page.evaluate(() => !!document.querySelector("#app #lab_mat")), "settings screen open");
+  await page.evaluate(() => history.back());
+  await page.waitForFunction(() => !!document.querySelector("#app #q"), { timeout: 5000 });
+  assert(true, "Back from settings returns home");
+
+  /* (c) Back while a confirmation is open closes it and stays put */
+  await clickText(page, "#nav button", "إعدادات");
+  await clickText(page, "#app [data-a='wipe']", "مسح");
+  await clickText(page, "#app [data-a='wipe']", "تأكيد");
+  await page.waitForFunction(() => !!document.querySelector(".modal"), { timeout: 5000 });
+  assert(true, "the wipe confirmation opens");
+  await page.evaluate(() => history.back());
+  await page.waitForFunction(() => !document.querySelector(".modal"), { timeout: 5000 });
+  assert(true, "Back closes the modal first");
+  assert(
+    await page.evaluate(() => !!document.querySelector("#app #lab_mat")),
+    "and the screen behind the modal is unchanged"
+  );
+
+  /* (d) Escape closes a modal */
+  await clickText(page, "#app [data-a='wipe']", "تأكيد");
+  await page.waitForFunction(() => !!document.querySelector(".modal"), { timeout: 5000 });
+  await page.keyboard.press("Escape");
+  await page.waitForFunction(() => !document.querySelector(".modal"), { timeout: 5000 });
+  assert(true, "Escape closes the modal");
+  assert(
+    await page.evaluate(() => !!document.querySelector("#app #lab_mat")),
+    "Escape leaves the screen in place"
+  );
+  assert(await page.evaluate(() => window.__navMarker === 1), "still the same document after all Back steps");
+
   /* 1. airplane mode: kill the server and reload */
   console.log("\n[offline] acceptance test 1 — server killed (airplane mode)");
   server.kill();

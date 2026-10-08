@@ -1,7 +1,7 @@
 /* App bootstrap: state, routing, navigation, service worker + update flow,
  * PIN lock wiring, backup reminder. */
 
-import { $, esc, alertBox } from "./util.js";
+import { $, esc, alertBox, closeModal, settleBack, afterBack } from "./util.js";
 import { loadAll, saveData, saveSettings, requestPersist } from "./db.js";
 import { showLock, setUnlockCb, setRecGetter, bump, isLocked, lock } from "./pin.js";
 import { backupDue } from "./backup.js";
@@ -80,6 +80,16 @@ function go(v, id) {
   V.editPid = null;
   render();
   window.scrollTo(0, 0);
+  /* سجل المتصفح: شاشة واحدة = مدخل واحد، فلا يخرج «رجوع» من التطبيق فجأة (M1). */
+  const nid = V.id || null;
+  afterBack(() => {
+    try {
+      const st = history.state || {};
+      if (st.v !== v || (st.id || null) !== nid) history.pushState({ v, id: nid }, "");
+    } catch (e) {
+      /* pushState refused — Back simply keeps its default behaviour */
+    }
+  });
 }
 
 function markNav() {
@@ -204,6 +214,12 @@ function dbErrorScreen() {
 }
 
 (async function boot() {
+  /* المدخل الأساسي في سجل المتصفح: الشاشة الأولى = home (M1). */
+  try {
+    history.replaceState({ v: "home", id: null }, "");
+  } catch (e) {
+    /* ignore */
+  }
   const r = await loadAll();
   if (r.error) return dbErrorScreen();
   D = r.D || [];
@@ -247,4 +263,21 @@ function dbErrorScreen() {
   });
   window.addEventListener("pagehide", background);
   window.addEventListener("pageshow", foreground);
+
+  /* M1: رجوع المتصفح يتنقل بين الشاشات، ويغلق النوافذ أولًا؛ Escape يغلقها. */
+  window.addEventListener("popstate", (e) => {
+    if (settleBack()) return; // إغلاق نافذة عبر «رجوع»: الشاشة لم تتغير
+    if (closeModal(true)) return; // «رجوع» أثناء نافذة: أغلقها فقط
+    const st = e.state && e.state.v ? e.state : { v: "home", id: null };
+    if (V.v !== st.v || (V.id || null) !== (st.id || null)) {
+      V.v = st.v;
+      V.id = st.id || null;
+      V.editPid = null;
+      render();
+      window.scrollTo(0, 0);
+    }
+  });
+  window.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") closeModal();
+  });
 })();
